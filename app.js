@@ -39,8 +39,8 @@ import json
 from pyodide.ffi import create_proxy
 
 # Configuração do Supabase (substitua com suas credenciais)
-SUPABASE_URL = "https://seu-projeto.supabase.co"
-SUPABASE_KEY = "sua-chave-anon-public"
+SUPABASE_URL = "https://fdqqflyrevxagpxxmjfj.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkcXFmbHlyZXZ4YWdweHhtamZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5NDI0NjYsImV4cCI6MjA3NzUxODQ2Nn0.yiGbEYGzA3PuhUNdM-q6oYKQl2g2Kafmas0F6izkVk0"
 
 class WebGIS:
     def __init__(self):

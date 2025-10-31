@@ -6,8 +6,8 @@ let currentGeoJsonData = null;
 let pyodide;
 let currentBasemap = 'osm';
 let supabaseConfig = {
-    url: 'https://fdqqflyrevxagpxxmjfj.supabase.co',
-    key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkcXFmbHlyZXZ4YWdweHhtamZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5NDI0NjYsImV4cCI6MjA3NzUxODQ2Nn0.yiGbEYGzA3PuhUNdM-q6oYKQl2g2Kafmas0F6izkVk0'
+    url: '',
+    key: ''
 };
 
 // Basemaps disponíveis
@@ -36,26 +36,56 @@ const basemaps = {
 
 // Inicializar mapa
 function initializeMap() {
+    console.log('Inicializando mapa...');
     map = L.map('map').setView([-23.5505, -46.6333], 10);
+    
+    // Adicionar basemap padrão
     updateBasemap('osm');
+    
+    // Adicionar evento de clique no mapa
+    map.on('click', function(e) {
+        const { lat, lng } = e.latlng;
+        document.getElementById('latitude').value = lat.toFixed(6);
+        document.getElementById('longitude').value = lng.toFixed(6);
+        updateStatus(`Coordenadas definidas: ${lat.toFixed(6)}, ${lng.toFixed(6)}`, 'info');
+    });
+    
+    console.log('Mapa inicializado com sucesso');
+    return map;
 }
 
 // Atualizar basemap
 function updateBasemap(basemapKey) {
-    if (map) {
-        map.eachLayer(layer => {
-            if (layer instanceof L.TileLayer) {
-                map.removeLayer(layer);
-            }
-        });
-        
-        const basemap = basemaps[basemapKey];
+    if (!map) {
+        console.error('Mapa não inicializado');
+        return;
+    }
+    
+    // Remover apenas tile layers, manter outros layers
+    map.eachLayer(layer => {
+        if (layer instanceof L.TileLayer) {
+            map.removeLayer(layer);
+        }
+    });
+    
+    const basemap = basemaps[basemapKey];
+    if (basemap) {
         L.tileLayer(basemap.url, {
             attribution: basemap.attribution
         }).addTo(map);
         
         currentBasemap = basemapKey;
+        updateStatus(`Basemap alterado para: ${basemap.name}`, 'info');
     }
+}
+
+// Verificar se o mapa está inicializado
+function isMapInitialized() {
+    if (!map) {
+        updateStatus('Erro: Mapa não inicializado. Recarregue a página.', 'error');
+        return false;
+    }
+    return true;
 }
 
 // Inicializar Pyodide
@@ -387,8 +417,12 @@ async function saveGeoJSONToSupabase() {
     }
 }
 
-// Funções para GeoJSON (mantidas da versão anterior)
+// Funções para GeoJSON - CORRIGIDAS
 function loadGeoJSONFile(file) {
+    if (!isMapInitialized()) {
+        return;
+    }
+    
     const reader = new FileReader();
     
     reader.onload = async function(e) {
@@ -398,6 +432,7 @@ function loadGeoJSONFile(file) {
             
             displayFileInfo(geojsonData);
             
+            // Criar layer GeoJSON
             const layer = L.geoJSON(geojsonData, {
                 style: function(feature) {
                     return {
@@ -417,7 +452,10 @@ function loadGeoJSONFile(file) {
                         layer.bindPopup(popupContent);
                     }
                 }
-            }).addTo(map);
+            });
+            
+            // Adicionar layer ao mapa
+            layer.addTo(map);
             
             geoJsonLayers.push({
                 name: file.name,
@@ -425,11 +463,13 @@ function loadGeoJSONFile(file) {
                 data: geojsonData
             });
             
+            // Ajustar o zoom para mostrar toda a camada
             map.fitBounds(layer.getBounds());
             updateStatus(`GeoJSON "${file.name}" carregado com sucesso!`, 'success');
             
         } catch (error) {
-            updateStatus(`Erro ao carregar GeoJSON: ${error}`, 'error');
+            console.error('Erro detalhado:', error);
+            updateStatus(`Erro ao carregar GeoJSON: ${error.message}`, 'error');
         }
     };
     
@@ -537,110 +577,176 @@ function displayAnalysisResults(analysis) {
 }
 
 // Event Listeners
-document.getElementById('basemap-selector').addEventListener('change', function(e) {
-    updateBasemap(e.target.value);
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM carregado, inicializando aplicação...');
+    
+    // Inicializar mapa primeiro
+    initializeMap();
+    
+    // Depois inicializar Pyodide
+    initializePyodide();
+    
+    // Configurar event listeners
+    setupEventListeners();
 });
 
-document.getElementById('test-connection').addEventListener('click', testSupabaseConnection);
+function setupEventListeners() {
+    // Basemap selector
+    document.getElementById('basemap-selector').addEventListener('change', function(e) {
+        updateBasemap(e.target.value);
+    });
 
-document.getElementById('save-to-db').addEventListener('click', saveGeoJSONToSupabase);
+    // Supabase connection
+    document.getElementById('test-connection').addEventListener('click', testSupabaseConnection);
 
-document.getElementById('load-from-db').addEventListener('click', loadFromSupabase);
+    // Save to database
+    document.getElementById('save-to-db').addEventListener('click', saveGeoJSONToSupabase);
 
-document.getElementById('geojson-file').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if (file) {
-        loadGeoJSONFile(file);
-    }
-});
+    // Load from database
+    document.getElementById('load-from-db').addEventListener('click', loadFromSupabase);
 
-document.getElementById('calculate-area').addEventListener('click', calculateGeoJSONArea);
+    // GeoJSON file input
+    document.getElementById('geojson-file').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            loadGeoJSONFile(file);
+        }
+    });
 
-document.getElementById('load-sample').addEventListener('click', function() {
-    const sampleGeoJSON = {
-        "type": "FeatureCollection",
-        "features": [
-            {
-                "type": "Feature",
-                "properties": {
-                    "name": "Área de Exemplo",
-                    "tipo": "polígono_teste"
+    // Calculate area
+    document.getElementById('calculate-area').addEventListener('click', calculateGeoJSONArea);
+
+    // Load sample data
+    document.getElementById('load-sample').addEventListener('click', function() {
+        const sampleGeoJSON = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "name": "Área de Exemplo",
+                        "tipo": "polígono_teste",
+                        "area": "1km²"
+                    },
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [-46.6333, -23.5505],
+                            [-46.6333, -23.5405],
+                            [-46.6233, -23.5405],
+                            [-46.6233, -23.5505],
+                            [-46.6333, -23.5505]
+                        ]]
+                    }
                 },
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [[
-                        [-46.6333, -23.5505],
-                        [-46.6333, -23.5405],
-                        [-46.6233, -23.5405],
-                        [-46.6233, -23.5505],
-                        [-46.6333, -23.5505]
-                    ]]
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "name": "Ponto Central",
+                        "tipo": "marcador"
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [-46.6283, -23.5455]
+                    }
+                }
+            ]
+        };
+        
+        // Simular carregamento de arquivo
+        currentGeoJsonData = sampleGeoJSON;
+        displayFileInfo(sampleGeoJSON);
+        
+        // Adicionar ao mapa
+        const layer = L.geoJSON(sampleGeoJSON, {
+            style: function(feature) {
+                return {
+                    color: getColorByGeometryType(feature.geometry.type),
+                    weight: 2,
+                    opacity: 0.8,
+                    fillOpacity: 0.3
+                };
+            },
+            onEachFeature: function(feature, layer) {
+                if (feature.properties) {
+                    let popupContent = '<div class="popup-content">';
+                    for (const [key, value] of Object.entries(feature.properties)) {
+                        popupContent += `<strong>${key}:</strong> ${value}<br>`;
+                    }
+                    popupContent += `</div>`;
+                    layer.bindPopup(popupContent);
                 }
             }
-        ]
-    };
-    
-    const blob = new Blob([JSON.stringify(sampleGeoJSON)], { type: 'application/json' });
-    const file = new File([blob], "exemplo.geojson");
-    loadGeoJSONFile(file);
-});
-
-document.getElementById('add-point').addEventListener('click', async () => {
-    const lat = document.getElementById('latitude').value;
-    const lng = document.getElementById('longitude').value;
-    const description = document.getElementById('description').value;
-    
-    if (!lat || !lng) {
-        updateStatus('Por favor, preencha latitude e longitude', 'error');
-        return;
-    }
-    
-    try {
-        const marker = L.marker([lat, lng])
-            .addTo(map)
-            .bindPopup(`<b>${description}</b><br>Lat: ${lat}, Lng: ${lng}`);
+        }).addTo(map);
         
-        markers.push(marker);
-        updateStatus('Marcador adicionado com sucesso!', 'success');
+        geoJsonLayers.push({
+            name: "exemplo.geojson",
+            layer: layer,
+            data: sampleGeoJSON
+        });
         
-    } catch (error) {
-        updateStatus(`Erro ao adicionar marcador: ${error}`, 'error');
-    }
-});
+        map.fitBounds(layer.getBounds());
+        updateStatus('Dados de exemplo carregados com sucesso!', 'success');
+    });
 
-document.getElementById('clear-map').addEventListener('click', () => {
-    markers.forEach(marker => map.removeLayer(marker));
-    markers = [];
-    
-    geoJsonLayers.forEach(item => map.removeLayer(item.layer));
-    geoJsonLayers = [];
-    
-    currentGeoJsonData = null;
-    document.getElementById('file-info').innerHTML = '';
-    document.getElementById('results').innerHTML = '';
-    document.getElementById('geojson-file').value = '';
-    
-    updateStatus('Mapa limpo', 'success');
-});
+    // Add point
+    document.getElementById('add-point').addEventListener('click', async () => {
+        if (!isMapInitialized()) return;
+        
+        const lat = document.getElementById('latitude').value;
+        const lng = document.getElementById('longitude').value;
+        const description = document.getElementById('description').value;
+        
+        if (!lat || !lng) {
+            updateStatus('Por favor, preencha latitude e longitude', 'error');
+            return;
+        }
+        
+        try {
+            const marker = L.marker([lat, lng])
+                .addTo(map)
+                .bindPopup(`<b>${description}</b><br>Lat: ${lat}, Lng: ${lng}`);
+            
+            markers.push(marker);
+            updateStatus('Marcador adicionado com sucesso!', 'success');
+            
+        } catch (error) {
+            updateStatus(`Erro ao adicionar marcador: ${error}`, 'error');
+        }
+    });
 
-// Adicionar marcador ao clicar no mapa
-map.on('click', function(e) {
-    const { lat, lng } = e.latlng;
-    document.getElementById('latitude').value = lat.toFixed(6);
-    document.getElementById('longitude').value = lng.toFixed(6);
-});
+    // Clear map
+    document.getElementById('clear-map').addEventListener('click', () => {
+        if (!isMapInitialized()) return;
+        
+        markers.forEach(marker => map.removeLayer(marker));
+        markers = [];
+        
+        geoJsonLayers.forEach(item => map.removeLayer(item.layer));
+        geoJsonLayers = [];
+        
+        currentGeoJsonData = null;
+        document.getElementById('file-info').innerHTML = '';
+        document.getElementById('results').innerHTML = '';
+        document.getElementById('geojson-file').value = '';
+        
+        updateStatus('Mapa limpo', 'success');
+    });
+}
 
 // Funções de interface
 function updateStatus(message, type = 'info') {
     const statusElement = document.getElementById('status');
-    statusElement.textContent = message;
-    statusElement.className = `status ${type}`;
+    if (statusElement) {
+        statusElement.textContent = message;
+        statusElement.className = `status ${type}`;
+    }
     
     const outputElement = document.getElementById('output');
-    outputElement.textContent += `[${type.toUpperCase()}] ${message}\n`;
-    outputElement.scrollTop = outputElement.scrollHeight;
+    if (outputElement) {
+        outputElement.textContent += `[${type.toUpperCase()}] ${message}\n`;
+        outputElement.scrollTop = outputElement.scrollHeight;
+    }
+    
+    console.log(`[${type}] ${message}`);
 }
-
-// Inicializar a aplicação
-initializeMap();
-initializePyodide();

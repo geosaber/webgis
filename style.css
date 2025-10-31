@@ -12,7 +12,7 @@ body {
 }
 
 .container {
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 20px;
 }
@@ -43,6 +43,7 @@ header h1 {
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    position: relative;
 }
 
 #map {
@@ -50,16 +51,59 @@ header h1 {
     width: 100%;
 }
 
+.basemap-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: white;
+    padding: 10px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    z-index: 1000;
+}
+
+.basemap-controls h4 {
+    margin-bottom: 5px;
+    font-size: 12px;
+    color: #666;
+}
+
+.basemap-controls select {
+    width: 150px;
+    padding: 5px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
 .control-panel {
     background: white;
     padding: 20px;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    max-height: 600px;
+    overflow-y: auto;
 }
 
 .control-panel h3 {
     margin-bottom: 15px;
     color: #2c3e50;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 5px;
+}
+
+.config-section {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 15px;
+    border-left: 4px solid #3498db;
+}
+
+.config-section h4 {
+    margin-bottom: 10px;
+    color: #2c3e50;
+    font-size: 14px;
 }
 
 .form-group {
@@ -70,9 +114,10 @@ header h1 {
     display: block;
     margin-bottom: 5px;
     font-weight: 500;
+    font-size: 14px;
 }
 
-.form-group input {
+.form-group input, .form-group select {
     width: 100%;
     padding: 8px;
     border: 1px solid #ddd;
@@ -97,11 +142,32 @@ button:hover {
     background: #2980b9;
 }
 
-.status {
-    margin-top: 15px;
+button.secondary {
+    background: #6c757d;
+}
+
+button.secondary:hover {
+    background: #545b62;
+}
+
+button.success {
+    background: #28a745;
+}
+
+button.success:hover {
+    background: #218838;
+}
+
+.file-info, .status {
+    margin: 15px 0;
     padding: 10px;
     border-radius: 4px;
     font-size: 14px;
+}
+
+.file-info {
+    background: #e8f4fd;
+    border: 1px solid #b6d7e8;
 }
 
 .status.success {
@@ -116,70 +182,34 @@ button:hover {
     border: 1px solid #f5c6cb;
 }
 
-.python-console {
-    background: #2c3e50;
-    color: #ecf0f1;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+.status.info {
+    background: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
 }
 
-.python-console h3 {
-    margin-bottom: 15px;
-    color: #ecf0f1;
+.status.warning {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
 }
 
-#output {
-    background: #1a252f;
-    padding: 15px;
-    border-radius: 4px;
-    min-height: 100px;
-    font-family: 'Courier New', monospace;
-    font-size: 14px;
-    white-space: pre-wrap;
-    overflow-y: auto;
-    max-height: 200px;
-}
-
-@media (max-width: 768px) {
-    .main-content {
-        grid-template-columns: 1fr;
-    }
-}
-
-.file-info {
-    margin: 15px 0;
-    padding: 10px;
-    background: #e8f4fd;
-    border: 1px solid #b6d7e8;
-    border-radius: 4px;
-    font-size: 14px;
-}
-
-.file-info h4 {
-    margin: 0 0 8px 0;
-    color: #2c3e50;
-}
-
-.file-info ul {
-    margin: 0;
-    padding-left: 20px;
-}
-
-.results-panel {
+.python-console, .results-panel {
     background: white;
     padding: 20px;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    margin-top: 20px;
+    margin-bottom: 20px;
 }
 
-.results-panel h3 {
+.python-console h3, .results-panel h3 {
     margin-bottom: 15px;
     color: #2c3e50;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 5px;
 }
 
-#results {
+#output, #results {
     background: #f8f9fa;
     padding: 15px;
     border-radius: 4px;
@@ -188,37 +218,21 @@ button:hover {
     font-family: 'Courier New', monospace;
     font-size: 14px;
     white-space: pre-wrap;
+    max-height: 200px;
+    overflow-y: auto;
 }
 
-.geojson-layer-control {
-    margin-top: 10px;
-    padding: 10px;
-    background: #f8f9fa;
-    border-radius: 4px;
+#output {
+    background: #2c3e50;
+    color: #ecf0f1;
 }
 
-.layer-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 5px 0;
-    border-bottom: 1px solid #dee2e6;
-}
-
-.layer-item:last-child {
-    border-bottom: none;
-}
-
-.remove-layer {
-    background: #dc3545;
-    color: white;
-    border: none;
-    border-radius: 3px;
-    padding: 2px 8px;
-    cursor: pointer;
-    font-size: 12px;
-}
-
-.remove-layer:hover {
-    background: #c82333;
+@media (max-width: 768px) {
+    .main-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .container {
+        padding: 10px;
+    }
 }

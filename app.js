@@ -1,13 +1,62 @@
-// Inicializar o mapa
-const map = L.map('map').setView([-23.5505, -46.6333], 10);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors'
-}).addTo(map);
-
+// Configurações do mapa e variáveis globais
+let map;
 let markers = [];
 let geoJsonLayers = [];
 let currentGeoJsonData = null;
 let pyodide;
+let currentBasemap = 'osm';
+let supabaseConfig = {
+    url: 'https://fdqqflyrevxagpxxmjfj.supabase.co',
+    key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkcXFmbHlyZXZ4YWdweHhtamZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5NDI0NjYsImV4cCI6MjA3NzUxODQ2Nn0.yiGbEYGzA3PuhUNdM-q6oYKQl2g2Kafmas0F6izkVk0'
+};
+
+// Basemaps disponíveis
+const basemaps = {
+    osm: {
+        name: 'OpenStreetMap',
+        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        attribution: '© OpenStreetMap contributors'
+    },
+    satellite: {
+        name: 'Satélite',
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attribution: '© Esri, Earthstar Geographics'
+    },
+    terrain: {
+        name: 'Terreno',
+        url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+        attribution: '© OpenTopoMap contributors'
+    },
+    dark: {
+        name: 'Escuro',
+        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        attribution: '© CARTO'
+    }
+};
+
+// Inicializar mapa
+function initializeMap() {
+    map = L.map('map').setView([-23.5505, -46.6333], 10);
+    updateBasemap('osm');
+}
+
+// Atualizar basemap
+function updateBasemap(basemapKey) {
+    if (map) {
+        map.eachLayer(layer => {
+            if (layer instanceof L.TileLayer) {
+                map.removeLayer(layer);
+            }
+        });
+        
+        const basemap = basemaps[basemapKey];
+        L.tileLayer(basemap.url, {
+            attribution: basemap.attribution
+        }).addTo(map);
+        
+        currentBasemap = basemapKey;
+    }
+}
 
 // Inicializar Pyodide
 async function initializePyodide() {
@@ -25,7 +74,7 @@ async function initializePyodide() {
     }
 }
 
-// Carregar código Python personalizado - VERSÃO COM GEOJSON
+// Carregar código Python
 async function loadPythonCode() {
     try {
         const pythonCode = `
@@ -129,7 +178,7 @@ class GeoJSONAnalyzer:
                 
                 area += (lng2 - lng1) * (2 + math.sin(lat1) + math.sin(lat2))
             
-            area = abs(area) * 6371 * 6371 / 2  # Raio da Terra ao quadrado dividido por 2
+            area = abs(area) * 6371 * 6371 / 2
             return abs(area)
         except Exception as e:
             return f"Erro no cálculo: {str(e)}"
@@ -141,7 +190,6 @@ class GeoJSONAnalyzer:
                 coords = geometry['coordinates']
                 return {'lat': coords[1], 'lng': coords[0]}
             elif geometry['type'] == 'Polygon':
-                # Usar o primeiro anel do polígono (anel externo)
                 coords = geometry['coordinates'][0]
                 lats = [coord[1] for coord in coords]
                 lngs = [coord[0] for coord in coords]
@@ -167,24 +215,6 @@ class GeoJSONAnalyzer:
             'min_lng': min(lngs),
             'max_lng': max(lngs)
         }
-    
-    def calculate_distance(self, lat1, lng1, lat2, lng2):
-        """Calcula distância entre dois pontos (Haversine)"""
-        try:
-            R = 6371  # Raio da Terra em km
-            
-            lat1_rad = math.radians(float(lat1))
-            lat2_rad = math.radians(float(lat2))
-            delta_lat = math.radians(float(lat2) - float(lat1))
-            delta_lng = math.radians(float(lng2) - float(lng1))
-            
-            a = (math.sin(delta_lat / 2) ** 2 + 
-                 math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lng / 2) ** 2)
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-            
-            return R * c
-        except Exception as e:
-            return f"Erro: {str(e)}"
 
 # Criar instância global
 geojson_analyzer = GeoJSONAnalyzer()
@@ -198,7 +228,166 @@ geojson_analyzer = GeoJSONAnalyzer()
     }
 }
 
-// Funções para manipulação de GeoJSON
+// Funções para Supabase
+async function testSupabaseConnection() {
+    const url = document.getElementById('supabase-url').value;
+    const key = document.getElementById('supabase-key').value;
+    
+    if (!url || !key) {
+        updateStatus('Preencha URL e Key do Supabase', 'error');
+        return;
+    }
+    
+    supabaseConfig.url = url;
+    supabaseConfig.key = key;
+    
+    try {
+        const response = await fetch(`${url}/rest/v1/geographic_points?limit=1`, {
+            method: 'GET',
+            headers: {
+                'apikey': key,
+                'Authorization': `Bearer ${key}`
+            }
+        });
+        
+        if (response.ok) {
+            updateStatus('Conexão com Supabase estabelecida!', 'success');
+            return true;
+        } else {
+            updateStatus('Erro na conexão com Supabase', 'error');
+            return false;
+        }
+    } catch (error) {
+        updateStatus(`Erro: ${error.message}`, 'error');
+        return false;
+    }
+}
+
+async function saveToSupabase(markerData) {
+    if (!supabaseConfig.url || !supabaseConfig.key) {
+        updateStatus('Configure primeiro a conexão com Supabase', 'error');
+        return { success: false, error: 'Configuração não definida' };
+    }
+    
+    try {
+        const response = await fetch(`${supabaseConfig.url}/rest/v1/geographic_points`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': supabaseConfig.key,
+                'Authorization': `Bearer ${supabaseConfig.key}`
+            },
+            body: JSON.stringify({
+                latitude: parseFloat(markerData.lat),
+                longitude: parseFloat(markerData.lng),
+                description: markerData.description
+            })
+        });
+        
+        if (response.ok) {
+            return { success: true, message: 'Dados salvos no Supabase!' };
+        } else {
+            const error = await response.text();
+            return { success: false, error: error };
+        }
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+}
+
+async function loadFromSupabase() {
+    if (!supabaseConfig.url || !supabaseConfig.key) {
+        updateStatus('Configure primeiro a conexão com Supabase', 'error');
+        return;
+    }
+    
+    try {
+        updateStatus('Carregando dados do Supabase...', 'info');
+        
+        const response = await fetch(`${supabaseConfig.url}/rest/v1/geographic_points?select=*`, {
+            method: 'GET',
+            headers: {
+                'apikey': supabaseConfig.key,
+                'Authorization': `Bearer ${supabaseConfig.key}`
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Limpar marcadores existentes
+            markers.forEach(marker => map.removeLayer(marker));
+            markers = [];
+            
+            // Adicionar novos marcadores
+            data.forEach(item => {
+                const marker = L.marker([item.latitude, item.longitude])
+                    .addTo(map)
+                    .bindPopup(`<b>${item.description}</b><br>Lat: ${item.latitude}, Lng: ${item.longitude}<br>ID: ${item.id}`);
+                markers.push(marker);
+            });
+            
+            updateStatus(`Carregados ${data.length} pontos do Supabase`, 'success');
+            
+            // Ajustar mapa para mostrar todos os pontos
+            if (data.length > 0) {
+                const group = new L.featureGroup(markers);
+                map.fitBounds(group.getBounds());
+            }
+        } else {
+            updateStatus('Erro ao carregar dados do Supabase', 'error');
+        }
+    } catch (error) {
+        updateStatus(`Erro: ${error.message}`, 'error');
+    }
+}
+
+async function saveGeoJSONToSupabase() {
+    if (!currentGeoJsonData) {
+        updateStatus('Nenhum GeoJSON carregado para salvar', 'error');
+        return;
+    }
+    
+    if (!supabaseConfig.url || !supabaseConfig.key) {
+        updateStatus('Configure primeiro a conexão com Supabase', 'error');
+        return;
+    }
+    
+    try {
+        updateStatus('Salvando GeoJSON no Supabase...', 'info');
+        
+        // Para cada feature do GeoJSON, salvar como ponto individual
+        if (currentGeoJsonData.type === 'FeatureCollection') {
+            let savedCount = 0;
+            let errorCount = 0;
+            
+            for (const feature of currentGeoJsonData.features) {
+                if (feature.geometry.type === 'Point') {
+                    const coords = feature.geometry.coordinates;
+                    const description = feature.properties?.name || 'Ponto do GeoJSON';
+                    
+                    const result = await saveToSupabase({
+                        lat: coords[1],
+                        lng: coords[0],
+                        description: description
+                    });
+                    
+                    if (result.success) {
+                        savedCount++;
+                    } else {
+                        errorCount++;
+                    }
+                }
+            }
+            
+            updateStatus(`GeoJSON salvo: ${savedCount} pontos salvos, ${errorCount} erros`, 'success');
+        }
+    } catch (error) {
+        updateStatus(`Erro ao salvar GeoJSON: ${error.message}`, 'error');
+    }
+}
+
+// Funções para GeoJSON (mantidas da versão anterior)
 function loadGeoJSONFile(file) {
     const reader = new FileReader();
     
@@ -207,10 +396,8 @@ function loadGeoJSONFile(file) {
             const geojsonData = JSON.parse(e.target.result);
             currentGeoJsonData = geojsonData;
             
-            // Exibir informações do arquivo
             displayFileInfo(geojsonData);
             
-            // Adicionar ao mapa
             const layer = L.geoJSON(geojsonData, {
                 style: function(feature) {
                     return {
@@ -238,9 +425,7 @@ function loadGeoJSONFile(file) {
                 data: geojsonData
             });
             
-            // Ajustar mapa para mostrar os dados
             map.fitBounds(layer.getBounds());
-            
             updateStatus(`GeoJSON "${file.name}" carregado com sucesso!`, 'success');
             
         } catch (error) {
@@ -290,7 +475,6 @@ function displayFileInfo(geojsonData) {
     fileInfo.innerHTML = infoHTML;
 }
 
-// Função para calcular área usando Python
 async function calculateGeoJSONArea() {
     if (!currentGeoJsonData) {
         updateStatus('Nenhum GeoJSON carregado para calcular área', 'error');
@@ -341,7 +525,6 @@ function displayAnalysisResults(analysis) {
                 (${typeof area.area_hectares === 'number' ? area.area_hectares.toFixed(2) : area.area_hectares} ha)</li>`;
         });
         
-        // Calcular área total
         const totalArea = analysis.areas.reduce((sum, area) => {
             return typeof area.area_km2 === 'number' ? sum + area.area_km2 : sum;
         }, 0);
@@ -354,6 +537,16 @@ function displayAnalysisResults(analysis) {
 }
 
 // Event Listeners
+document.getElementById('basemap-selector').addEventListener('change', function(e) {
+    updateBasemap(e.target.value);
+});
+
+document.getElementById('test-connection').addEventListener('click', testSupabaseConnection);
+
+document.getElementById('save-to-db').addEventListener('click', saveGeoJSONToSupabase);
+
+document.getElementById('load-from-db').addEventListener('click', loadFromSupabase);
+
 document.getElementById('geojson-file').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (file) {
@@ -364,7 +557,6 @@ document.getElementById('geojson-file').addEventListener('change', function(e) {
 document.getElementById('calculate-area').addEventListener('click', calculateGeoJSONArea);
 
 document.getElementById('load-sample').addEventListener('click', function() {
-    // GeoJSON de exemplo - um polígono simples
     const sampleGeoJSON = {
         "type": "FeatureCollection",
         "features": [
@@ -388,13 +580,10 @@ document.getElementById('load-sample').addEventListener('click', function() {
         ]
     };
     
-    // Criar um arquivo virtual para simular upload
     const blob = new Blob([JSON.stringify(sampleGeoJSON)], { type: 'application/json' });
     const file = new File([blob], "exemplo.geojson");
     loadGeoJSONFile(file);
 });
-
-// ... (mantenha os outros event listeners anteriores para add-point, clear-map, etc.)
 
 document.getElementById('add-point').addEventListener('click', async () => {
     const lat = document.getElementById('latitude').value;
@@ -407,7 +596,6 @@ document.getElementById('add-point').addEventListener('click', async () => {
     }
     
     try {
-        // Adicionar marcador ao mapa
         const marker = L.marker([lat, lng])
             .addTo(map)
             .bindPopup(`<b>${description}</b><br>Lat: ${lat}, Lng: ${lng}`);
@@ -421,11 +609,9 @@ document.getElementById('add-point').addEventListener('click', async () => {
 });
 
 document.getElementById('clear-map').addEventListener('click', () => {
-    // Limpar marcadores
     markers.forEach(marker => map.removeLayer(marker));
     markers = [];
     
-    // Limpar layers GeoJSON
     geoJsonLayers.forEach(item => map.removeLayer(item.layer));
     geoJsonLayers = [];
     
@@ -435,6 +621,13 @@ document.getElementById('clear-map').addEventListener('click', () => {
     document.getElementById('geojson-file').value = '';
     
     updateStatus('Mapa limpo', 'success');
+});
+
+// Adicionar marcador ao clicar no mapa
+map.on('click', function(e) {
+    const { lat, lng } = e.latlng;
+    document.getElementById('latitude').value = lat.toFixed(6);
+    document.getElementById('longitude').value = lng.toFixed(6);
 });
 
 // Funções de interface
@@ -449,4 +642,5 @@ function updateStatus(message, type = 'info') {
 }
 
 // Inicializar a aplicação
+initializeMap();
 initializePyodide();

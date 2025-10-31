@@ -3,30 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGIS com Python e PostGIS</title>
+    <title>WebGIS com Python, GeoJSON e PostgreSQL</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>WebGIS com Python e PostGIS</h1>
-            <p>Carregue arquivos GeoJSON e calcule áreas usando Python</p>
+            <h1>WebGIS com Python, GeoJSON e PostgreSQL</h1>
+            <p>Carregue GeoJSON, calcule áreas e salve no PostgreSQL</p>
         </header>
 
         <div class="main-content">
             <div class="map-container">
                 <div id="map"></div>
+                <div class="basemap-controls">
+                    <h4>Camada Base:</h4>
+                    <select id="basemap-selector">
+                        <option value="osm">OpenStreetMap</option>
+                        <option value="satellite">Satélite</option>
+                        <option value="terrain">Terreno</option>
+                        <option value="dark">Escuro</option>
+                    </select>
+                </div>
             </div>
             
             <div class="control-panel">
                 <h3>Controles</h3>
                 
+                <!-- Configuração do Supabase -->
+                <div class="config-section">
+                    <h4>Configuração do Banco</h4>
+                    <div class="form-group">
+                        <label for="supabase-url">Supabase URL:</label>
+                        <input type="text" id="supabase-url" placeholder="https://seu-projeto.supabase.co">
+                    </div>
+                    <div class="form-group">
+                        <label for="supabase-key">Supabase Key:</label>
+                        <input type="text" id="supabase-key" placeholder="sua-chave-anon-public">
+                    </div>
+                    <button id="test-connection">Testar Conexão</button>
+                </div>
+
+                <!-- Carregar GeoJSON -->
                 <div class="form-group">
                     <label for="geojson-file">Carregar GeoJSON:</label>
                     <input type="file" id="geojson-file" accept=".geojson,.json">
                 </div>
                 
+                <!-- Adicionar ponto manual -->
                 <div class="form-group">
                     <label for="latitude">Latitude:</label>
                     <input type="number" id="latitude" step="any" value="-23.5505">
@@ -40,9 +65,12 @@
                     <input type="text" id="description" placeholder="Digite uma descrição">
                 </div>
                 
+                <!-- Botões de ação -->
                 <button id="add-point">Adicionar Ponto</button>
-                <button id="load-sample">Carregar Dados de Exemplo</button>
-                <button id="calculate-area">Calcular Área do GeoJSON</button>
+                <button id="save-to-db">Salvar no Banco</button>
+                <button id="load-from-db">Carregar do Banco</button>
+                <button id="load-sample">Carregar Exemplo</button>
+                <button id="calculate-area">Calcular Área</button>
                 <button id="clear-map">Limpar Mapa</button>
                 
                 <div class="file-info" id="file-info"></div>

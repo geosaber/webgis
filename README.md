@@ -8,36 +8,31 @@
 - ✅ Interface responsiva
 - ✅ Conexão com PostgreSQL/Supabase
 
-## Funcionalidades Implementadas:
+## Versão Completa com PostgreSQL e Basemaps
 
-### ✅ **Carregamento de GeoJSON**
-- Upload de arquivos .geojson ou .json
-- Visualização imediata no mapa
-- Informações detalhadas do arquivo
+### ✅ **PostgreSQL/Supabase**
+- Configuração de conexão
+- Teste de conexão
+- Salvar pontos no banco
+- Carregar pontos do banco
+- Salvar features do GeoJSON
 
-### ✅ **Análise com Python**
-- Identificação de tipos de geometria
-- Cálculo de área para polígonos
-- Cálculo de centroides
-- Análise de bounds
+### ✅ **Troca de Basemaps**
+- OpenStreetMap (padrão)
+- Satélite
+- Terreno
+- Mapa Escuro
 
-### ✅ **Cálculo de Área**
-- Algoritmo esférico para coordenadas geográficas
-- Suporte a Polygon e MultiPolygon
-- Resultados em km² e hectares
+### ✅ **GeoJSON**
+- Carregamento de arquivos
+- Cálculo de área com Python
+- Análise de dados
+- Visualização no mapa
 
-### ✅ **Visualização**
-- Cores diferentes por tipo de geometria
-- Popups com propriedades
-- Ajuste automático do zoom
-
-## Como usar:
-
-1. **Carregue um GeoJSON**: Use o seletor de arquivos
-2. **Veja no mapa**: Os dados aparecerão imediatamente
-3. **Calcule área**: Clique em "Calcular Área do GeoJSON"
-4. **Analise resultados**: Veja áreas, tipos de geometria e estatísticas
-
-A aplicação agora pode carregar qualquer arquivo GeoJSON válido e calcular áreas usando Python diretamente no navegador!
+### ✅ **Interface Melhorada**
+- Seção de configuração do banco
+- Controles de basemap
+- Status detalhado
+- Console Python
 
 > Este WebGIS demonstra como usar Python no frontend, combinado com um backend PostgreSQL no Supabase, tudo hospedado no GitHub Pages.

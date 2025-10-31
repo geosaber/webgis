@@ -9,19 +9,35 @@
 - ✅ Conexão com PostgreSQL/Supabase
 
 ## Funcionalidades Implementadas:
-- ✅ Cálculo de distância entre pontos (Haversine)
-- ✅ Cálculo de área de polígonos
-- ✅ Processamento e análise de dados geoespaciais
-- ✅ Filtragem de pontos por raio
-- ✅ Integração com Supabase via JavaScript
-- ✅ Interface totalmente funcional
 
-## Melhorias Futuras:
+### ✅ **Carregamento de GeoJSON**
+- Upload de arquivos .geojson ou .json
+- Visualização imediata no mapa
+- Informações detalhadas do arquivo
 
-- Integração Real com Supabase: Implementar comunicação direta
-- Mais Operações Geoespaciais: Buffer, interseções, etc.
-- Camadas Temáticas: Diferentes tipos de dados
-- Upload de Arquivos: Shapefiles, GeoJSON
-- Análises Avançadas: Estatísticas espaciais
+### ✅ **Análise com Python**
+- Identificação de tipos de geometria
+- Cálculo de área para polígonos
+- Cálculo de centroides
+- Análise de bounds
+
+### ✅ **Cálculo de Área**
+- Algoritmo esférico para coordenadas geográficas
+- Suporte a Polygon e MultiPolygon
+- Resultados em km² e hectares
+
+### ✅ **Visualização**
+- Cores diferentes por tipo de geometria
+- Popups com propriedades
+- Ajuste automático do zoom
+
+## Como usar:
+
+1. **Carregue um GeoJSON**: Use o seletor de arquivos
+2. **Veja no mapa**: Os dados aparecerão imediatamente
+3. **Calcule área**: Clique em "Calcular Área do GeoJSON"
+4. **Analise resultados**: Veja áreas, tipos de geometria e estatísticas
+
+A aplicação agora pode carregar qualquer arquivo GeoJSON válido e calcular áreas usando Python diretamente no navegador!
 
 > Este WebGIS demonstra como usar Python no frontend, combinado com um backend PostgreSQL no Supabase, tudo hospedado no GitHub Pages.

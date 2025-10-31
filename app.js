@@ -5,6 +5,8 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let markers = [];
+let geoJsonLayers = [];
+let currentGeoJsonData = null;
 let pyodide;
 
 // Inicializar Pyodide
@@ -23,7 +25,7 @@ async function initializePyodide() {
     }
 }
 
-// Carregar código Python personalizado - VERSÃO CORRIGIDA
+// Carregar código Python personalizado - VERSÃO COM GEOJSON
 async function loadPythonCode() {
     try {
         const pythonCode = `
@@ -32,24 +34,19 @@ from js import document, console
 import json
 import math
 
-class WebGIS:
+class GeoJSONAnalyzer:
     def __init__(self):
-        self.markers = []
+        self.features_data = []
     
-    def add_marker(self, lat, lng, description):
-        """Adiciona um marcador ao mapa"""
+    def load_geojson(self, geojson_str):
+        """Carrega e analisa dados GeoJSON"""
         try:
-            marker_data = {
-                'lat': float(lat),
-                'lng': float(lng),
-                'description': description,
-                'type': 'point'
-            }
-            
+            geojson_data = json.loads(geojson_str)
+            analysis_result = self.analyze_geojson(geojson_data)
             return json.dumps({
                 'success': True,
-                'data': marker_data,
-                'message': 'Marcador adicionado com sucesso!'
+                'data': geojson_data,
+                'analysis': analysis_result
             })
         except Exception as e:
             return json.dumps({
@@ -57,8 +54,122 @@ class WebGIS:
                 'error': str(e)
             })
     
+    def analyze_geojson(self, geojson_data):
+        """Analisa o GeoJSON e extrai informações"""
+        analysis = {
+            'type': geojson_data.get('type', 'Unknown'),
+            'total_features': 0,
+            'feature_types': {},
+            'bounds': None,
+            'areas': [],
+            'centroids': []
+        }
+        
+        if geojson_data['type'] == 'FeatureCollection':
+            features = geojson_data.get('features', [])
+            analysis['total_features'] = len(features)
+            
+            for feature in features:
+                geom_type = feature['geometry']['type']
+                analysis['feature_types'][geom_type] = analysis['feature_types'].get(geom_type, 0) + 1
+                
+                # Calcular área para polígonos
+                if geom_type in ['Polygon', 'MultiPolygon']:
+                    area = self.calculate_geojson_area(feature['geometry'])
+                    analysis['areas'].append({
+                        'type': geom_type,
+                        'area_km2': area,
+                        'area_hectares': area * 100
+                    })
+                
+                # Calcular centroide
+                centroid = self.calculate_centroid(feature['geometry'])
+                if centroid:
+                    analysis['centroids'].append(centroid)
+        
+        # Calcular bounds totais
+        if analysis['centroids']:
+            analysis['bounds'] = self.calculate_bounds(analysis['centroids'])
+        
+        return analysis
+    
+    def calculate_geojson_area(self, geometry):
+        """Calcula área de geometrias GeoJSON em km²"""
+        try:
+            if geometry['type'] == 'Polygon':
+                return self.calculate_polygon_area_geographic(geometry['coordinates'][0])
+            elif geometry['type'] == 'MultiPolygon':
+                total_area = 0
+                for polygon in geometry['coordinates']:
+                    total_area += self.calculate_polygon_area_geographic(polygon[0])
+                return total_area
+            else:
+                return 0
+        except Exception as e:
+            return f"Erro: {str(e)}"
+    
+    def calculate_polygon_area_geographic(self, coordinates):
+        """Calcula área de polígono em coordenadas geográficas usando método esférico"""
+        try:
+            if len(coordinates) < 3:
+                return 0
+            
+            area = 0.0
+            n = len(coordinates)
+            
+            for i in range(n):
+                j = (i + 1) % n
+                point1 = coordinates[i]  # [lng, lat]
+                point2 = coordinates[j]  # [lng, lat]
+                
+                lat1 = math.radians(point1[1])
+                lng1 = math.radians(point1[0])
+                lat2 = math.radians(point2[1])
+                lng2 = math.radians(point2[0])
+                
+                area += (lng2 - lng1) * (2 + math.sin(lat1) + math.sin(lat2))
+            
+            area = abs(area) * 6371 * 6371 / 2  # Raio da Terra ao quadrado dividido por 2
+            return abs(area)
+        except Exception as e:
+            return f"Erro no cálculo: {str(e)}"
+    
+    def calculate_centroid(self, geometry):
+        """Calcula o centroide de uma geometria"""
+        try:
+            if geometry['type'] == 'Point':
+                coords = geometry['coordinates']
+                return {'lat': coords[1], 'lng': coords[0]}
+            elif geometry['type'] == 'Polygon':
+                # Usar o primeiro anel do polígono (anel externo)
+                coords = geometry['coordinates'][0]
+                lats = [coord[1] for coord in coords]
+                lngs = [coord[0] for coord in coords]
+                return {
+                    'lat': sum(lats) / len(lats),
+                    'lng': sum(lngs) / len(lngs)
+                }
+            return None
+        except:
+            return None
+    
+    def calculate_bounds(self, points):
+        """Calcula os limites de uma lista de pontos"""
+        if not points:
+            return None
+        
+        lats = [point['lat'] for point in points]
+        lngs = [point['lng'] for point in points]
+        
+        return {
+            'min_lat': min(lats),
+            'max_lat': max(lats),
+            'min_lng': min(lngs),
+            'max_lng': max(lngs)
+        }
+    
     def calculate_distance(self, lat1, lng1, lat2, lng2):
-        """Calcula a distância entre dois pontos usando a fórmula de Haversine"""
+        """Calcula distância entre dois pontos (Haversine)"""
         try:
             R = 6371  # Raio da Terra em km
             
@@ -71,153 +182,220 @@ class WebGIS:
                  math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lng / 2) ** 2)
             c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
             
-            distance = R * c
-            return distance
+            return R * c
         except Exception as e:
-            return f"Erro no cálculo: {str(e)}"
-    
-    def calculate_polygon_area(self, coordinates):
-        """Calcula a área de um polígono usando a fórmula do shoelace"""
-        try:
-            if len(coordinates) < 3:
-                return "Polígono precisa de pelo menos 3 pontos"
-            
-            area = 0.0
-            n = len(coordinates)
-            
-            for i in range(n):
-                j = (i + 1) % n
-                lat1, lng1 = coordinates[i]
-                lat2, lng2 = coordinates[j]
-                
-                # Fórmula do shoelace adaptada para coordenadas geográficas
-                area += (math.radians(lng1) * math.radians(lat2) - 
-                         math.radians(lng2) * math.radians(lat1))
-            
-            area = abs(area) * 6371 * 6371 / 2  # Aproximação em km²
-            return area
-        except Exception as e:
-            return f"Erro no cálculo da área: {str(e)}"
-    
-    def process_geodata(self, data):
-        """Processa dados geoespaciais"""
-        if not data:
-            return "Nenhum dado para processar"
-        
-        try:
-            total_points = len(data)
-            bounds = self.calculate_bounds(data)
-            
-            # Calcular centroide
-            avg_lat = sum(point['lat'] for point in data) / total_points
-            avg_lng = sum(point['lng'] for point in data) / total_points
-            
-            results = {
-                'total_points': total_points,
-                'bounds': bounds,
-                'centroid': {'lat': avg_lat, 'lng': avg_lng},
-                'analysis': 'Análise básica concluída'
-            }
-            
-            return json.dumps(results)
-        except Exception as e:
-            return json.dumps({'error': str(e)})
-    
-    def calculate_bounds(self, data):
-        """Calcula os limites dos dados"""
-        if not data:
-            return None
-        
-        lats = [point['lat'] for point in data]
-        lngs = [point['lng'] for point in data]
-        
-        return {
-            'min_lat': min(lats),
-            'max_lat': max(lats),
-            'min_lng': min(lngs),
-            'max_lng': max(lngs)
-        }
-    
-    def filter_points_by_radius(self, points, center_lat, center_lng, radius_km):
-        """Filtra pontos dentro de um raio específico"""
-        try:
-            filtered_points = []
-            for point in points:
-                distance = self.calculate_distance(
-                    center_lat, center_lng, 
-                    point['lat'], point['lng']
-                )
-                if distance <= radius_km:
-                    filtered_points.append({
-                        **point,
-                        'distance': distance
-                    })
-            
-            return json.dumps({
-                'points': filtered_points,
-                'count': len(filtered_points),
-                'radius': radius_km
-            })
-        except Exception as e:
-            return json.dumps({'error': str(e)})
+            return f"Erro: {str(e)}"
 
 # Criar instância global
-webgis = WebGIS()
+geojson_analyzer = GeoJSONAnalyzer()
 `;
 
         pyodide.runPython(pythonCode);
-        updateStatus('Código Python carregado!', 'success');
+        updateStatus('Analisador GeoJSON carregado!', 'success');
         
     } catch (error) {
         updateStatus(`Erro ao carregar código Python: ${error}`, 'error');
     }
 }
 
-// Função para comunicação com Supabase via JavaScript
-async function saveToSupabase(markerData) {
-    // Substitua com suas credenciais do Supabase
-    const SUPABASE_URL = "https://fdqqflyrevxagpxxmjfj.supabase.co";
-    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkcXFmbHlyZXZ4YWdweHhtamZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5NDI0NjYsImV4cCI6MjA3NzUxODQ2Nn0.yiGbEYGzA3PuhUNdM-q6oYKQl2g2Kafmas0F6izkVk0";
+// Funções para manipulação de GeoJSON
+function loadGeoJSONFile(file) {
+    const reader = new FileReader();
     
-    try {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/geographic_points`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`
-            },
-            body: JSON.stringify({
-                latitude: markerData.lat,
-                longitude: markerData.lng,
-                description: markerData.description
-            })
+    reader.onload = async function(e) {
+        try {
+            const geojsonData = JSON.parse(e.target.result);
+            currentGeoJsonData = geojsonData;
+            
+            // Exibir informações do arquivo
+            displayFileInfo(geojsonData);
+            
+            // Adicionar ao mapa
+            const layer = L.geoJSON(geojsonData, {
+                style: function(feature) {
+                    return {
+                        color: getColorByGeometryType(feature.geometry.type),
+                        weight: 2,
+                        opacity: 0.8,
+                        fillOpacity: 0.3
+                    };
+                },
+                onEachFeature: function(feature, layer) {
+                    if (feature.properties) {
+                        let popupContent = '<div class="popup-content">';
+                        for (const [key, value] of Object.entries(feature.properties)) {
+                            popupContent += `<strong>${key}:</strong> ${value}<br>`;
+                        }
+                        popupContent += `</div>`;
+                        layer.bindPopup(popupContent);
+                    }
+                }
+            }).addTo(map);
+            
+            geoJsonLayers.push({
+                name: file.name,
+                layer: layer,
+                data: geojsonData
+            });
+            
+            // Ajustar mapa para mostrar os dados
+            map.fitBounds(layer.getBounds());
+            
+            updateStatus(`GeoJSON "${file.name}" carregado com sucesso!`, 'success');
+            
+        } catch (error) {
+            updateStatus(`Erro ao carregar GeoJSON: ${error}`, 'error');
+        }
+    };
+    
+    reader.onerror = function() {
+        updateStatus('Erro ao ler arquivo', 'error');
+    };
+    
+    reader.readAsText(file);
+}
+
+function getColorByGeometryType(type) {
+    const colors = {
+        'Point': '#ff0000',
+        'LineString': '#0000ff',
+        'Polygon': '#00ff00',
+        'MultiPolygon': '#008800'
+    };
+    return colors[type] || '#999999';
+}
+
+function displayFileInfo(geojsonData) {
+    const fileInfo = document.getElementById('file-info');
+    let infoHTML = '<h4>Informações do Arquivo:</h4>';
+    
+    if (geojsonData.type === 'FeatureCollection') {
+        const featureCount = geojsonData.features.length;
+        const geometryTypes = {};
+        
+        geojsonData.features.forEach(feature => {
+            const type = feature.geometry.type;
+            geometryTypes[type] = (geometryTypes[type] || 0) + 1;
         });
         
-        if (response.ok) {
-            return { success: true, message: 'Dados salvos no Supabase!' };
-        } else {
-            const error = await response.text();
-            return { success: false, error: error };
+        infoHTML += `<p><strong>Total de Features:</strong> ${featureCount}</p>`;
+        infoHTML += '<p><strong>Tipos de Geometria:</strong></p><ul>';
+        
+        for (const [type, count] of Object.entries(geometryTypes)) {
+            infoHTML += `<li>${type}: ${count}</li>`;
         }
+        infoHTML += '</ul>';
+    }
+    
+    fileInfo.innerHTML = infoHTML;
+}
+
+// Função para calcular área usando Python
+async function calculateGeoJSONArea() {
+    if (!currentGeoJsonData) {
+        updateStatus('Nenhum GeoJSON carregado para calcular área', 'error');
+        return;
+    }
+    
+    try {
+        updateStatus('Calculando área com Python...', 'info');
+        
+        const result = await pyodide.runPythonAsync(`
+geojson_analyzer.load_geojson('${JSON.stringify(currentGeoJsonData).replace(/'/g, "\\'")}')
+`);
+        
+        const data = JSON.parse(result);
+        
+        if (data.success) {
+            displayAnalysisResults(data.analysis);
+            updateStatus('Análise concluída com sucesso!', 'success');
+        } else {
+            updateStatus(`Erro na análise: ${data.error}`, 'error');
+        }
+        
     } catch (error) {
-        return { success: false, error: error.message };
+        updateStatus(`Erro ao calcular área: ${error}`, 'error');
     }
 }
 
-// Funções de interface
-function updateStatus(message, type = 'info') {
-    const statusElement = document.getElementById('status');
-    statusElement.textContent = message;
-    statusElement.className = `status ${type}`;
+function displayAnalysisResults(analysis) {
+    const resultsElement = document.getElementById('results');
+    let resultsHTML = '<h4>Resultados da Análise:</h4>';
     
-    // Adicionar ao console Python
-    const outputElement = document.getElementById('output');
-    outputElement.textContent += `[${type.toUpperCase()}] ${message}\\n`;
-    outputElement.scrollTop = outputElement.scrollHeight;
+    resultsHTML += `<p><strong>Tipo:</strong> ${analysis.type}</p>`;
+    resultsHTML += `<p><strong>Total de Features:</strong> ${analysis.total_features}</p>`;
+    
+    if (Object.keys(analysis.feature_types).length > 0) {
+        resultsHTML += '<p><strong>Distribuição por Tipo:</strong></p><ul>';
+        for (const [type, count] of Object.entries(analysis.feature_types)) {
+            resultsHTML += `<li>${type}: ${count}</li>`;
+        }
+        resultsHTML += '</ul>';
+    }
+    
+    if (analysis.areas.length > 0) {
+        resultsHTML += '<p><strong>Áreas Calculadas:</strong></p><ul>';
+        analysis.areas.forEach((area, index) => {
+            resultsHTML += `<li>Feature ${index + 1} (${area.type}): 
+                ${typeof area.area_km2 === 'number' ? area.area_km2.toFixed(2) : area.area_km2} km² 
+                (${typeof area.area_hectares === 'number' ? area.area_hectares.toFixed(2) : area.area_hectares} ha)</li>`;
+        });
+        
+        // Calcular área total
+        const totalArea = analysis.areas.reduce((sum, area) => {
+            return typeof area.area_km2 === 'number' ? sum + area.area_km2 : sum;
+        }, 0);
+        
+        resultsHTML += `<li><strong>Área Total: ${totalArea.toFixed(2)} km² (${(totalArea * 100).toFixed(2)} ha)</strong></li>`;
+        resultsHTML += '</ul>';
+    }
+    
+    resultsElement.innerHTML = resultsHTML;
 }
 
 // Event Listeners
+document.getElementById('geojson-file').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        loadGeoJSONFile(file);
+    }
+});
+
+document.getElementById('calculate-area').addEventListener('click', calculateGeoJSONArea);
+
+document.getElementById('load-sample').addEventListener('click', function() {
+    // GeoJSON de exemplo - um polígono simples
+    const sampleGeoJSON = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "name": "Área de Exemplo",
+                    "tipo": "polígono_teste"
+                },
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-46.6333, -23.5505],
+                        [-46.6333, -23.5405],
+                        [-46.6233, -23.5405],
+                        [-46.6233, -23.5505],
+                        [-46.6333, -23.5505]
+                    ]]
+                }
+            }
+        ]
+    };
+    
+    // Criar um arquivo virtual para simular upload
+    const blob = new Blob([JSON.stringify(sampleGeoJSON)], { type: 'application/json' });
+    const file = new File([blob], "exemplo.geojson");
+    loadGeoJSONFile(file);
+});
+
+// ... (mantenha os outros event listeners anteriores para add-point, clear-map, etc.)
+
 document.getElementById('add-point').addEventListener('click', async () => {
     const lat = document.getElementById('latitude').value;
     const lng = document.getElementById('longitude').value;
@@ -229,129 +407,46 @@ document.getElementById('add-point').addEventListener('click', async () => {
     }
     
     try {
-        const result = await pyodide.runPythonAsync(`
-webgis.add_marker(${lat}, ${lng}, "${description}")
-`);
+        // Adicionar marcador ao mapa
+        const marker = L.marker([lat, lng])
+            .addTo(map)
+            .bindPopup(`<b>${description}</b><br>Lat: ${lat}, Lng: ${lng}`);
         
-        const data = JSON.parse(result);
-        
-        if (data.success) {
-            // Adicionar marcador ao mapa
-            const marker = L.marker([lat, lng])
-                .addTo(map)
-                .bindPopup(`<b>${description}</b><br>Lat: ${lat}, Lng: ${lng}`);
-            
-            markers.push(marker);
-            updateStatus(data.message, 'success');
-            
-            // Tentar salvar no Supabase
-            const supabaseResult = await saveToSupabase(data.data);
-            if (supabaseResult.success) {
-                updateStatus(supabaseResult.message, 'success');
-            } else {
-                updateStatus(`Supabase: ${supabaseResult.error}`, 'warning');
-            }
-        } else {
-            updateStatus(`Erro: ${data.error}`, 'error');
-        }
+        markers.push(marker);
+        updateStatus('Marcador adicionado com sucesso!', 'success');
         
     } catch (error) {
         updateStatus(`Erro ao adicionar marcador: ${error}`, 'error');
     }
 });
 
-document.getElementById('load-data').addEventListener('click', async () => {
-    try {
-        // Simular carregamento de dados
-        const sampleData = [
-            { lat: -23.5505, lng: -46.6333, description: "São Paulo" },
-            { lat: -22.9068, lng: -43.1729, description: "Rio de Janeiro" },
-            { lat: -19.9167, lng: -43.9345, description: "Belo Horizonte" },
-            { lat: -23.5489, lng: -46.6388, description: "Centro de SP" }
-        ];
-        
-        // Processar dados com Python
-        const result = await pyodide.runPythonAsync(`
-webgis.process_geodata(${JSON.stringify(sampleData)})
-`);
-        
-        const analysis = JSON.parse(result);
-        
-        if (analysis.error) {
-            updateStatus(`Erro na análise: ${analysis.error}`, 'error');
-            return;
-        }
-        
-        updateStatus(
-            `Análise: ${analysis.analysis} - ${analysis.total_points} pontos - ` +
-            `Centro: ${analysis.centroid.lat.toFixed(4)}, ${analysis.centroid.lng.toFixed(4)}`, 
-            'success'
-        );
-        
-        // Adicionar marcadores ao mapa
-        sampleData.forEach(point => {
-            const marker = L.marker([point.lat, point.lng])
-                .addTo(map)
-                .bindPopup(`<b>${point.description}</b>`);
-            markers.push(marker);
-        });
-        
-        // Ajustar zoom para mostrar todos os marcadores
-        const group = new L.featureGroup(markers);
-        map.fitBounds(group.getBounds());
-        
-    } catch (error) {
-        updateStatus(`Erro ao carregar dados: ${error}`, 'error');
-    }
-});
-
-document.getElementById('calculate-area').addEventListener('click', async () => {
-    try {
-        // Criar um polígono de exemplo (triângulo)
-        const polygonCoords = [
-            [-23.5505, -46.6333],  // São Paulo
-            [-22.9068, -43.1729],  // Rio de Janeiro  
-            [-19.9167, -43.9345]   // Belo Horizonte
-        ];
-        
-        const result = await pyodide.runPythonAsync(`
-webgis.calculate_polygon_area(${JSON.stringify(polygonCoords)})
-`);
-        
-        updateStatus(`Área do polígono: ${parseFloat(result).toFixed(2)} km²`, 'success');
-        
-        // Desenhar o polígono no mapa
-        const polygon = L.polygon(polygonCoords, {color: 'blue'}).addTo(map);
-        markers.push(polygon);
-        
-    } catch (error) {
-        updateStatus(`Erro ao calcular área: ${error}`, 'error');
-    }
-});
-
 document.getElementById('clear-map').addEventListener('click', () => {
+    // Limpar marcadores
     markers.forEach(marker => map.removeLayer(marker));
     markers = [];
+    
+    // Limpar layers GeoJSON
+    geoJsonLayers.forEach(item => map.removeLayer(item.layer));
+    geoJsonLayers = [];
+    
+    currentGeoJsonData = null;
+    document.getElementById('file-info').innerHTML = '';
+    document.getElementById('results').innerHTML = '';
+    document.getElementById('geojson-file').value = '';
+    
     updateStatus('Mapa limpo', 'success');
 });
 
-// Adicionar marcador ao clicar no mapa
-map.on('click', async (e) => {
-    const { lat, lng } = e.latlng;
+// Funções de interface
+function updateStatus(message, type = 'info') {
+    const statusElement = document.getElementById('status');
+    statusElement.textContent = message;
+    statusElement.className = `status ${type}`;
     
-    document.getElementById('latitude').value = lat.toFixed(6);
-    document.getElementById('longitude').value = lng.toFixed(6);
-    
-    // Calcular distância do ponto central (exemplo)
-    try {
-        const distance = await pyodide.runPythonAsync(`
-webgis.calculate_distance(-23.5505, -46.6333, ${lat}, ${lng})
-`);
-        updateStatus(`Distância do centro de SP: ${parseFloat(distance).toFixed(2)} km`, 'info');
-    } catch (error) {
-        console.error('Erro ao calcular distância:', error);
-    }
-});
+    const outputElement = document.getElementById('output');
+    outputElement.textContent += `[${type.toUpperCase()}] ${message}\n`;
+    outputElement.scrollTop = outputElement.scrollHeight;
+}
 
 // Inicializar a aplicação
 initializePyodide();

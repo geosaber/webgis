@@ -13,11 +13,6 @@ async function initializePyodide() {
         updateStatus('Inicializando Python...', 'info');
         pyodide = await loadPyodide();
         
-        // Instalar pacotes necessários
-        await pyodide.loadPackage('micropip');
-        const micropip = pyodide.pyimport('micropip');
-        await micropip.install(['supabase', 'asyncio']);
-        
         updateStatus('Python inicializado com sucesso!', 'success');
         
         // Carregar nosso código Python
@@ -28,25 +23,18 @@ async function initializePyodide() {
     }
 }
 
-// Carregar código Python personalizado
+// Carregar código Python personalizado - VERSÃO CORRIGIDA
 async function loadPythonCode() {
     try {
-        // Aqui você pode carregar código Python adicional
         const pythonCode = `
 import js
 from js import document, console
 import json
-from pyodide.ffi import create_proxy
-
-# Configuração do Supabase (substitua com suas credenciais)
-SUPABASE_URL = "https://fdqqflyrevxagpxxmjfj.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkcXFmbHlyZXZ4YWdweHhtamZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5NDI0NjYsImV4cCI6MjA3NzUxODQ2Nn0.yiGbEYGzA3PuhUNdM-q6oYKQl2g2Kafmas0F6izkVk0"
+import math
 
 class WebGIS:
     def __init__(self):
         self.markers = []
-        self.supabase_url = SUPABASE_URL
-        self.supabase_key = SUPABASE_KEY
     
     def add_marker(self, lat, lng, description):
         """Adiciona um marcador ao mapa"""
@@ -58,8 +46,6 @@ class WebGIS:
                 'type': 'point'
             }
             
-            # Em um cenário real, aqui você salvaria no Supabase
-            # Por enquanto, apenas retornamos os dados
             return json.dumps({
                 'success': True,
                 'data': marker_data,
@@ -73,34 +59,69 @@ class WebGIS:
     
     def calculate_distance(self, lat1, lng1, lat2, lng2):
         """Calcula a distância entre dois pontos usando a fórmula de Haversine"""
-        from math import radians, sin, cos, sqrt, atan2
-        
-        R = 6371  # Raio da Terra em km
-        
-        lat1_rad = radians(lat1)
-        lat2_rad = radians(lat2)
-        delta_lat = radians(lat2 - lat1)
-        delta_lng = radians(lng2 - lng1)
-        
-        a = (sin(delta_lat / 2) ** 2 + 
-             cos(lat1_rad) * cos(lat2_rad) * sin(delta_lng / 2) ** 2)
-        c = 2 * atan2(sqrt(a), sqrt(1 - a))
-        
-        distance = R * c
-        return distance
+        try:
+            R = 6371  # Raio da Terra em km
+            
+            lat1_rad = math.radians(float(lat1))
+            lat2_rad = math.radians(float(lat2))
+            delta_lat = math.radians(float(lat2) - float(lat1))
+            delta_lng = math.radians(float(lng2) - float(lng1))
+            
+            a = (math.sin(delta_lat / 2) ** 2 + 
+                 math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lng / 2) ** 2)
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            
+            distance = R * c
+            return distance
+        except Exception as e:
+            return f"Erro no cálculo: {str(e)}"
+    
+    def calculate_polygon_area(self, coordinates):
+        """Calcula a área de um polígono usando a fórmula do shoelace"""
+        try:
+            if len(coordinates) < 3:
+                return "Polígono precisa de pelo menos 3 pontos"
+            
+            area = 0.0
+            n = len(coordinates)
+            
+            for i in range(n):
+                j = (i + 1) % n
+                lat1, lng1 = coordinates[i]
+                lat2, lng2 = coordinates[j]
+                
+                # Fórmula do shoelace adaptada para coordenadas geográficas
+                area += (math.radians(lng1) * math.radians(lat2) - 
+                         math.radians(lng2) * math.radians(lat1))
+            
+            area = abs(area) * 6371 * 6371 / 2  # Aproximação em km²
+            return area
+        except Exception as e:
+            return f"Erro no cálculo da área: {str(e)}"
     
     def process_geodata(self, data):
         """Processa dados geoespaciais"""
         if not data:
             return "Nenhum dado para processar"
         
-        results = {
-            'total_points': len(data),
-            'bounds': self.calculate_bounds(data),
-            'analysis': 'Análise básica concluída'
-        }
-        
-        return json.dumps(results)
+        try:
+            total_points = len(data)
+            bounds = self.calculate_bounds(data)
+            
+            # Calcular centroide
+            avg_lat = sum(point['lat'] for point in data) / total_points
+            avg_lng = sum(point['lng'] for point in data) / total_points
+            
+            results = {
+                'total_points': total_points,
+                'bounds': bounds,
+                'centroid': {'lat': avg_lat, 'lng': avg_lng},
+                'analysis': 'Análise básica concluída'
+            }
+            
+            return json.dumps(results)
+        except Exception as e:
+            return json.dumps({'error': str(e)})
     
     def calculate_bounds(self, data):
         """Calcula os limites dos dados"""
@@ -116,6 +137,29 @@ class WebGIS:
             'min_lng': min(lngs),
             'max_lng': max(lngs)
         }
+    
+    def filter_points_by_radius(self, points, center_lat, center_lng, radius_km):
+        """Filtra pontos dentro de um raio específico"""
+        try:
+            filtered_points = []
+            for point in points:
+                distance = self.calculate_distance(
+                    center_lat, center_lng, 
+                    point['lat'], point['lng']
+                )
+                if distance <= radius_km:
+                    filtered_points.append({
+                        **point,
+                        'distance': distance
+                    })
+            
+            return json.dumps({
+                'points': filtered_points,
+                'count': len(filtered_points),
+                'radius': radius_km
+            })
+        except Exception as e:
+            return json.dumps({'error': str(e)})
 
 # Criar instância global
 webgis = WebGIS()
@@ -126,6 +170,38 @@ webgis = WebGIS()
         
     } catch (error) {
         updateStatus(`Erro ao carregar código Python: ${error}`, 'error');
+    }
+}
+
+// Função para comunicação com Supabase via JavaScript
+async function saveToSupabase(markerData) {
+    // Substitua com suas credenciais do Supabase
+    const SUPABASE_URL = "https://fdqqflyrevxagpxxmjfj.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZkcXFmbHlyZXZ4YWdweHhtamZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5NDI0NjYsImV4cCI6MjA3NzUxODQ2Nn0.yiGbEYGzA3PuhUNdM-q6oYKQl2g2Kafmas0F6izkVk0";
+    
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/geographic_points`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`
+            },
+            body: JSON.stringify({
+                latitude: markerData.lat,
+                longitude: markerData.lng,
+                description: markerData.description
+            })
+        });
+        
+        if (response.ok) {
+            return { success: true, message: 'Dados salvos no Supabase!' };
+        } else {
+            const error = await response.text();
+            return { success: false, error: error };
+        }
+    } catch (error) {
+        return { success: false, error: error.message };
     }
 }
 
@@ -167,6 +243,14 @@ webgis.add_marker(${lat}, ${lng}, "${description}")
             
             markers.push(marker);
             updateStatus(data.message, 'success');
+            
+            // Tentar salvar no Supabase
+            const supabaseResult = await saveToSupabase(data.data);
+            if (supabaseResult.success) {
+                updateStatus(supabaseResult.message, 'success');
+            } else {
+                updateStatus(`Supabase: ${supabaseResult.error}`, 'warning');
+            }
         } else {
             updateStatus(`Erro: ${data.error}`, 'error');
         }
@@ -182,7 +266,8 @@ document.getElementById('load-data').addEventListener('click', async () => {
         const sampleData = [
             { lat: -23.5505, lng: -46.6333, description: "São Paulo" },
             { lat: -22.9068, lng: -43.1729, description: "Rio de Janeiro" },
-            { lat: -19.9167, lng: -43.9345, description: "Belo Horizonte" }
+            { lat: -19.9167, lng: -43.9345, description: "Belo Horizonte" },
+            { lat: -23.5489, lng: -46.6388, description: "Centro de SP" }
         ];
         
         // Processar dados com Python
@@ -191,7 +276,17 @@ webgis.process_geodata(${JSON.stringify(sampleData)})
 `);
         
         const analysis = JSON.parse(result);
-        updateStatus(`Análise: ${analysis.analysis} - ${analysis.total_points} pontos`, 'success');
+        
+        if (analysis.error) {
+            updateStatus(`Erro na análise: ${analysis.error}`, 'error');
+            return;
+        }
+        
+        updateStatus(
+            `Análise: ${analysis.analysis} - ${analysis.total_points} pontos - ` +
+            `Centro: ${analysis.centroid.lat.toFixed(4)}, ${analysis.centroid.lng.toFixed(4)}`, 
+            'success'
+        );
         
         // Adicionar marcadores ao mapa
         sampleData.forEach(point => {
@@ -207,6 +302,30 @@ webgis.process_geodata(${JSON.stringify(sampleData)})
         
     } catch (error) {
         updateStatus(`Erro ao carregar dados: ${error}`, 'error');
+    }
+});
+
+document.getElementById('calculate-area').addEventListener('click', async () => {
+    try {
+        // Criar um polígono de exemplo (triângulo)
+        const polygonCoords = [
+            [-23.5505, -46.6333],  // São Paulo
+            [-22.9068, -43.1729],  // Rio de Janeiro  
+            [-19.9167, -43.9345]   // Belo Horizonte
+        ];
+        
+        const result = await pyodide.runPythonAsync(`
+webgis.calculate_polygon_area(${JSON.stringify(polygonCoords)})
+`);
+        
+        updateStatus(`Área do polígono: ${parseFloat(result).toFixed(2)} km²`, 'success');
+        
+        // Desenhar o polígono no mapa
+        const polygon = L.polygon(polygonCoords, {color: 'blue'}).addTo(map);
+        markers.push(polygon);
+        
+    } catch (error) {
+        updateStatus(`Erro ao calcular área: ${error}`, 'error');
     }
 });
 
@@ -228,7 +347,7 @@ map.on('click', async (e) => {
         const distance = await pyodide.runPythonAsync(`
 webgis.calculate_distance(-23.5505, -46.6333, ${lat}, ${lng})
 `);
-        updateStatus(`Distância do centro: ${parseFloat(distance).toFixed(2)} km`, 'info');
+        updateStatus(`Distância do centro de SP: ${parseFloat(distance).toFixed(2)} km`, 'info');
     } catch (error) {
         console.error('Erro ao calcular distância:', error);
     }

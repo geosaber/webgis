@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGIS com Python e Supabase</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>WebGIS com Python e Supabase</h1>
+            <p>Visualização de dados geográficos usando Python no frontend</p>
+        </header>
+
+        <div class="main-content">
+            <div class="map-container">
+                <div id="map"></div>
+            </div>
+            
+            <div class="control-panel">
+                <h3>Controles</h3>
+                <div class="form-group">
+                    <label for="latitude">Latitude:</label>
+                    <input type="number" id="latitude" step="any" value="-23.5505">
+                </div>
+                <div class="form-group">
+                    <label for="longitude">Longitude:</label>
+                    <input type="number" id="longitude" step="any" value="-46.6333">
+                </div>
+                <div class="form-group">
+                    <label for="description">Descrição:</label>
+                    <input type="text" id="description" placeholder="Digite uma descrição">
+                </div>
+                <button id="add-point">Adicionar Ponto</button>
+                <button id="load-data">Carregar Dados</button>
+                <button id="clear-map">Limpar Mapa</button>
+                
+                <div class="status" id="status"></div>
+            </div>
+        </div>
+
+        <div class="python-console">
+            <h3>Console Python</h3>
+            <div id="output"></div>
+        </div>
+    </div>
+
+    <!-- Carregar Pyodide -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+    <!-- Carregar Leaflet -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <!-- Script principal -->
+    <script src="app.js"></script>
+</body>
+</html>

@@ -3,68 +3,98 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGIS com Python e GeoJSON</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <title>WebGIS Simplificado - GeoJSON/KML e Área</title>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" />
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>WebGIS com Python e GeoJSON</h1>
-            <p>Carregue arquivos GeoJSON e calcule áreas usando Python</p>
+            <h1>WebGIS Simplificado</h1>
+            <p>Carregue GeoJSON/KML, desenhe polígonos e calcule áreas</p>
         </header>
 
         <div class="main-content">
             <div class="map-container">
                 <div id="map"></div>
+                <div class="map-controls">
+                    <div class="control-group">
+                        <h4>Mapa Base</h4>
+                        <select id="basemap-selector">
+                            <option value="osm">OpenStreetMap</option>
+                            <option value="satellite">Satélite (ESRI)</option>
+                            <option value="topo">OpenTopoMap</option>
+                            <option value="carto">Carto DB</option>
+                            <option value="vector">Vector Tiles (OSM)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <h4>Ferramentas de Desenho</h4>
+                        <button id="draw-polygon" class="tool-btn active">Desenhar Polígono</button>
+                        <button id="draw-rectangle" class="tool-btn">Desenhar Retângulo</button>
+                        <button id="clear-drawing" class="tool-btn">Limpar Desenho</button>
+                    </div>
+                </div>
             </div>
             
             <div class="control-panel">
                 <h3>Controles</h3>
                 
-                <div class="form-group">
-                    <label for="geojson-file">Carregar GeoJSON:</label>
-                    <input type="file" id="geojson-file" accept=".geojson,.json">
+                <!-- Upload de Arquivos -->
+                <div class="upload-section">
+                    <h4>Carregar Arquivo</h4>
+                    <div class="file-input-group">
+                        <input type="file" id="file-input" accept=".geojson,.json,.kml,.kmz" multiple>
+                        <label for="file-input" class="file-label">Escolher GeoJSON/KML</label>
+                    </div>
+                    <div class="file-info" id="file-info"></div>
                 </div>
-                
-                <div class="form-group">
-                    <label for="latitude">Latitude:</label>
-                    <input type="number" id="latitude" step="any" value="-23.5505">
+
+                <!-- Informações da Área -->
+                <div class="area-section">
+                    <h4>Cálculo de Área</h4>
+                    <div class="area-info">
+                        <div class="area-item">
+                            <span>Área Total:</span>
+                            <span id="total-area">0.00</span>
+                            <span>km²</span>
+                        </div>
+                        <div class="area-item">
+                            <span>Em Hectares:</span>
+                            <span id="area-hectares">0.00</span>
+                            <span>ha</span>
+                        </div>
+                        <div class="area-item">
+                            <span>Polígonos:</span>
+                            <span id="polygon-count">0</span>
+                        </div>
+                    </div>
+                    <button id="calculate-area" class="action-btn">Calcular Área</button>
+                    <button id="clear-all" class="action-btn secondary">Limpar Tudo</button>
                 </div>
-                <div class="form-group">
-                    <label for="longitude">Longitude:</label>
-                    <input type="number" id="longitude" step="any" value="-46.6333">
+
+                <!-- Status -->
+                <div class="status-section">
+                    <h4>Status</h4>
+                    <div id="status" class="status">Pronto para começar</div>
                 </div>
-                <div class="form-group">
-                    <label for="description">Descrição:</label>
-                    <input type="text" id="description" placeholder="Digite uma descrição">
-                </div>
-                
-                <button id="add-point">Adicionar Ponto</button>
-                <button id="load-sample">Carregar Dados de Exemplo</button>
-                <button id="calculate-area">Calcular Área do GeoJSON</button>
-                <button id="clear-map">Limpar Mapa</button>
-                
-                <div class="file-info" id="file-info"></div>
-                <div class="status" id="status"></div>
             </div>
         </div>
 
-        <div class="python-console">
-            <h3>Console Python</h3>
-            <div id="output"></div>
-        </div>
-
-        <div class="results-panel">
-            <h3>Resultados da Análise</h3>
-            <div id="results"></div>
+        <!-- Console de Desenvolvimento -->
+        <div class="console-panel">
+            <h3>Console de Desenvolvimento</h3>
+            <div id="console-output"></div>
         </div>
     </div>
 
-    <!-- Carregar Pyodide -->
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
-    <!-- Carregar Leaflet -->
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <!-- Bibliotecas -->
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+    <script src="https://unpkg.com/@mapbox/mapbox-gl-draw@1.4.0/dist/mapbox-gl-draw.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@mapbox/mapbox-gl-draw@1.4.0/dist/mapbox-gl-draw.css" />
+    
     <!-- Script principal -->
     <script src="app.js"></script>
 </body>

@@ -1,45 +1,43 @@
-# WebGIS
+Funcionalidades Implementadas:
+✅ Carregamento de Arquivos
+GeoJSON e KML (com conversão simulada)
 
-## Funcionalidades do WebGIS
-- ✅ Visualização de mapa interativo
-- ✅ Adição de marcadores
-- ✅ Processamento de dados com Python
-- ✅ Cálculo de distâncias
-- ✅ Interface responsiva
-- ✅ Conexão com PostgreSQL/Supabase
+Múltiplos arquivos
 
-# Versão com Carregamento de GeoJSON
+Visualização imediata no mapa
 
-## Funcionalidades Implementadas:
+✅ Desenho Interativo
+Polígonos livres
 
-### ✅ **Carregamento de GeoJSON**
-- Upload de arquivos .geojson ou .json
-- Visualização imediata no mapa
-- Informações detalhadas do arquivo
+Retângulos
 
-### ✅ **Análise com Python**
-- Identificação de tipos de geometria
-- Cálculo de área para polígonos
-- Cálculo de centroides
-- Análise de bounds
+Ferramenta de limpeza
 
-### ✅ **Cálculo de Área**
-- Algoritmo esférico para coordenadas geográficas
-- Suporte a Polygon e MultiPolygon
-- Resultados em km² e hectares
+✅ Cálculo de Área
+Usando Turf.js para precisão
 
-### ✅ **Visualização**
-- Cores diferentes por tipo de geometria
-- Popups com propriedades
-- Ajuste automático do zoom
+Área em km² e hectares
 
-## Como usar:
+Cálculo automático ao desenhar
 
-1. **Carregue um GeoJSON**: Use o seletor de arquivos
-2. **Veja no mapa**: Os dados aparecerão imediatamente
-3. **Calcule área**: Clique em "Calcular Área do GeoJSON"
-4. **Analise resultados**: Veja áreas, tipos de geometria e estatísticas
+✅ Múltiplos Basemaps
+OpenStreetMap
 
-A aplicação agora pode carregar qualquer arquivo GeoJSON válido e calcular áreas usando Python diretamente no navegador!
+Satélite (ESRI)
 
-> Este WebGIS demonstra como usar Python no frontend, combinado com um backend PostgreSQL no Supabase, tudo hospedado no GitHub Pages.
+OpenTopoMap
+
+Carto DB
+
+Vector Tiles
+
+✅ Interface Moderna
+Design responsivo
+
+Feedback visual
+
+Console de desenvolvimento
+
+Status em tempo real
+
+A aplicação está simplificada e focada nas funcionalidades essenciais de análise geoespacial!

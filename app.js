@@ -1,477 +1,534 @@
-// Inicializar o mapa
-const map = L.map('map').setView([-23.5505, -46.6333], 10);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors'
-}).addTo(map);
-
-let markers = [];
-let geoJsonLayers = [];
-let currentGeoJsonData = null;
-let pyodide;
+// Configurações e variáveis globais
+let map;
+let draw;
 let currentBasemap = 'osm';
+let loadedLayers = [];
+let drawnFeatures = [];
 
-// Basemaps disponíveis
+// Basemaps configuration
 const basemaps = {
     osm: {
         name: 'OpenStreetMap',
-        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        attribution: '© OpenStreetMap contributors'
+        style: {
+            version: 8,
+            sources: {
+                'osm-tiles': {
+                    type: 'raster',
+                    tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png', 'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png', 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                    tileSize: 256,
+                    attribution: '© OpenStreetMap contributors'
+                }
+            },
+            layers: [{
+                id: 'osm-tiles',
+                type: 'raster',
+                source: 'osm-tiles',
+                minzoom: 0,
+                maxzoom: 19
+            }]
+        }
     },
     satellite: {
-        name: 'Satélite',
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attribution: '© Esri, Earthstar Geographics'
+        name: 'Satélite ESRI',
+        style: {
+            version: 8,
+            sources: {
+                'esri-satellite': {
+                    type: 'raster',
+                    tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+                    tileSize: 256,
+                    attribution: '© Esri, Earthstar Geographics'
+                }
+            },
+            layers: [{
+                id: 'esri-satellite',
+                type: 'raster',
+                source: 'esri-satellite',
+                minzoom: 0,
+                maxzoom: 19
+            }]
+        }
     },
-    terrain: {
-        name: 'Terreno',
-        url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-        attribution: '© OpenTopoMap contributors'
+    topo: {
+        name: 'OpenTopoMap',
+        style: {
+            version: 8,
+            sources: {
+                'opentopomap': {
+                    type: 'raster',
+                    tiles: ['https://a.tile.opentopomap.org/{z}/{x}/{y}.png', 'https://b.tile.opentopomap.org/{z}/{x}/{y}.png', 'https://c.tile.opentopomap.org/{z}/{x}/{y}.png'],
+                    tileSize: 256,
+                    attribution: '© OpenTopoMap contributors'
+                }
+            },
+            layers: [{
+                id: 'opentopomap',
+                type: 'raster',
+                source: 'opentopomap',
+                minzoom: 0,
+                maxzoom: 17
+            }]
+        }
     },
-    dark: {
-        name: 'Escuro',
-        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        attribution: '© CARTO'
+    carto: {
+        name: 'Carto DB',
+        style: {
+            version: 8,
+            sources: {
+                'carto-dark': {
+                    type: 'raster',
+                    tiles: ['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', 'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', 'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
+                    tileSize: 256,
+                    attribution: '© CARTO'
+                }
+            },
+            layers: [{
+                id: 'carto-dark',
+                type: 'raster',
+                source: 'carto-dark',
+                minzoom: 0,
+                maxzoom: 19
+            }]
+        }
+    },
+    vector: {
+        name: 'Vector Tiles OSM',
+        style: 'https://demotiles.maplibre.org/style.json'
     }
 };
 
-// Inicializar Pyodide
-async function initializePyodide() {
+// Inicializar a aplicação
+function initializeApp() {
+    initializeMap();
+    setupEventListeners();
+    updateStatus('Aplicação inicializada. Pronto para usar!', 'info');
+}
+
+// Inicializar o mapa
+function initializeMap() {
     try {
-        updateStatus('Inicializando Python...', 'info');
-        pyodide = await loadPyodide();
-        
-        updateStatus('Python inicializado com sucesso!', 'success');
-        
-        // Carregar nosso código Python
-        await loadPythonCode();
-        
-    } catch (error) {
-        updateStatus(`Erro ao inicializar Python: ${error}`, 'error');
-    }
-}
-
-// Carregar código Python personalizado - VERSÃO COM GEOJSON
-async function loadPythonCode() {
-    try {
-        const pythonCode = `
-import js
-from js import document, console
-import json
-import math
-
-class GeoJSONAnalyzer:
-    def __init__(self):
-        self.features_data = []
-    
-    def load_geojson(self, geojson_str):
-        """Carrega e analisa dados GeoJSON"""
-        try:
-            geojson_data = json.loads(geojson_str)
-            analysis_result = self.analyze_geojson(geojson_data)
-            return json.dumps({
-                'success': True,
-                'data': geojson_data,
-                'analysis': analysis_result
-            })
-        except Exception as e:
-            return json.dumps({
-                'success': False,
-                'error': str(e)
-            })
-    
-    def analyze_geojson(self, geojson_data):
-        """Analisa o GeoJSON e extrai informações"""
-        analysis = {
-            'type': geojson_data.get('type', 'Unknown'),
-            'total_features': 0,
-            'feature_types': {},
-            'bounds': None,
-            'areas': [],
-            'centroids': []
-        }
-        
-        if geojson_data['type'] == 'FeatureCollection':
-            features = geojson_data.get('features', [])
-            analysis['total_features'] = len(features)
-            
-            for feature in features:
-                geom_type = feature['geometry']['type']
-                analysis['feature_types'][geom_type] = analysis['feature_types'].get(geom_type, 0) + 1
-                
-                # Calcular área para polígonos
-                if geom_type in ['Polygon', 'MultiPolygon']:
-                    area = self.calculate_geojson_area(feature['geometry'])
-                    analysis['areas'].append({
-                        'type': geom_type,
-                        'area_km2': area,
-                        'area_hectares': area * 100
-                    })
-                
-                # Calcular centroide
-                centroid = self.calculate_centroid(feature['geometry'])
-                if centroid:
-                    analysis['centroids'].append(centroid)
-        
-        # Calcular bounds totais
-        if analysis['centroids']:
-            analysis['bounds'] = self.calculate_bounds(analysis['centroids'])
-        
-        return analysis
-    
-    def calculate_geojson_area(self, geometry):
-        """Calcula área de geometrias GeoJSON em km²"""
-        try:
-            if geometry['type'] == 'Polygon':
-                return self.calculate_polygon_area_geographic(geometry['coordinates'][0])
-            elif geometry['type'] == 'MultiPolygon':
-                total_area = 0
-                for polygon in geometry['coordinates']:
-                    total_area += self.calculate_polygon_area_geographic(polygon[0])
-                return total_area
-            else:
-                return 0
-        except Exception as e:
-            return f"Erro: {str(e)}"
-    
-    def calculate_polygon_area_geographic(self, coordinates):
-        """Calcula área de polígono em coordenadas geográficas usando método esférico"""
-        try:
-            if len(coordinates) < 3:
-                return 0
-            
-            area = 0.0
-            n = len(coordinates)
-            
-            for i in range(n):
-                j = (i + 1) % n
-                point1 = coordinates[i]  # [lng, lat]
-                point2 = coordinates[j]  # [lng, lat]
-                
-                lat1 = math.radians(point1[1])
-                lng1 = math.radians(point1[0])
-                lat2 = math.radians(point2[1])
-                lng2 = math.radians(point2[0])
-                
-                area += (lng2 - lng1) * (2 + math.sin(lat1) + math.sin(lat2))
-            
-            area = abs(area) * 6371 * 6371 / 2  # Raio da Terra ao quadrado dividido por 2
-            return abs(area)
-        except Exception as e:
-            return f"Erro no cálculo: {str(e)}"
-    
-    def calculate_centroid(self, geometry):
-        """Calcula o centroide de uma geometria"""
-        try:
-            if geometry['type'] == 'Point':
-                coords = geometry['coordinates']
-                return {'lat': coords[1], 'lng': coords[0]}
-            elif geometry['type'] == 'Polygon':
-                # Usar o primeiro anel do polígono (anel externo)
-                coords = geometry['coordinates'][0]
-                lats = [coord[1] for coord in coords]
-                lngs = [coord[0] for coord in coords]
-                return {
-                    'lat': sum(lats) / len(lats),
-                    'lng': sum(lngs) / len(lngs)
-                }
-            return None
-        except:
-            return None
-    
-    def calculate_bounds(self, points):
-        """Calcula os limites de uma lista de pontos"""
-        if not points:
-            return None
-        
-        lats = [point['lat'] for point in points]
-        lngs = [point['lng'] for point in points]
-        
-        return {
-            'min_lat': min(lats),
-            'max_lat': max(lats),
-            'min_lng': min(lngs),
-            'max_lng': max(lngs)
-        }
-    
-    def calculate_distance(self, lat1, lng1, lat2, lng2):
-        """Calcula distância entre dois pontos (Haversine)"""
-        try:
-            R = 6371  # Raio da Terra em km
-            
-            lat1_rad = math.radians(float(lat1))
-            lat2_rad = math.radians(float(lat2))
-            delta_lat = math.radians(float(lat2) - float(lat1))
-            delta_lng = math.radians(float(lng2) - float(lng1))
-            
-            a = (math.sin(delta_lat / 2) ** 2 + 
-                 math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lng / 2) ** 2)
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-            
-            return R * c
-        except Exception as e:
-            return f"Erro: {str(e)}"
-
-# Criar instância global
-geojson_analyzer = GeoJSONAnalyzer()
-`;
-
-        pyodide.runPython(pythonCode);
-        updateStatus('Analisador GeoJSON carregado!', 'success');
-        
-    } catch (error) {
-        updateStatus(`Erro ao carregar código Python: ${error}`, 'error');
-    }
-}
-
-// Funções para manipulação de GeoJSON
-function loadGeoJSONFile(file) {
-    const reader = new FileReader();
-    
-    reader.onload = async function(e) {
-        try {
-            const geojsonData = JSON.parse(e.target.result);
-            currentGeoJsonData = geojsonData;
-            
-            // Exibir informações do arquivo
-            displayFileInfo(geojsonData);
-            
-            // Adicionar ao mapa
-            const layer = L.geoJSON(geojsonData, {
-                style: function(feature) {
-                    return {
-                        color: getColorByGeometryType(feature.geometry.type),
-                        weight: 2,
-                        opacity: 0.8,
-                        fillOpacity: 0.3
-                    };
-                },
-                onEachFeature: function(feature, layer) {
-                    if (feature.properties) {
-                        let popupContent = '<div class="popup-content">';
-                        for (const [key, value] of Object.entries(feature.properties)) {
-                            popupContent += `<strong>${key}:</strong> ${value}<br>`;
-                        }
-                        popupContent += `</div>`;
-                        layer.bindPopup(popupContent);
-                    }
-                }
-            }).addTo(map);
-            
-            geoJsonLayers.push({
-                name: file.name,
-                layer: layer,
-                data: geojsonData
-            });
-            
-            // Ajustar mapa para mostrar os dados
-            map.fitBounds(layer.getBounds());
-            
-            updateStatus(`GeoJSON "${file.name}" carregado com sucesso!`, 'success');
-            
-        } catch (error) {
-            updateStatus(`Erro ao carregar GeoJSON: ${error}`, 'error');
-        }
-    };
-    
-    reader.onerror = function() {
-        updateStatus('Erro ao ler arquivo', 'error');
-    };
-    
-    reader.readAsText(file);
-}
-
-function getColorByGeometryType(type) {
-    const colors = {
-        'Point': '#ff0000',
-        'LineString': '#0000ff',
-        'Polygon': '#00ff00',
-        'MultiPolygon': '#008800'
-    };
-    return colors[type] || '#999999';
-}
-
-function displayFileInfo(geojsonData) {
-    const fileInfo = document.getElementById('file-info');
-    let infoHTML = '<h4>Informações do Arquivo:</h4>';
-    
-    if (geojsonData.type === 'FeatureCollection') {
-        const featureCount = geojsonData.features.length;
-        const geometryTypes = {};
-        
-        geojsonData.features.forEach(feature => {
-            const type = feature.geometry.type;
-            geometryTypes[type] = (geometryTypes[type] || 0) + 1;
+        map = new maplibregl.Map({
+            container: 'map',
+            style: basemaps.osm.style,
+            center: [-46.6333, -23.5505], // São Paulo
+            zoom: 10,
+            attributionControl: true
         });
-        
-        infoHTML += `<p><strong>Total de Features:</strong> ${featureCount}</p>`;
-        infoHTML += '<p><strong>Tipos de Geometria:</strong></p><ul>';
-        
-        for (const [type, count] of Object.entries(geometryTypes)) {
-            infoHTML += `<li>${type}: ${count}</li>`;
-        }
-        infoHTML += '</ul>';
+
+        // Adicionar controles de navegação
+        map.addControl(new maplibregl.NavigationControl());
+
+        // Inicializar ferramenta de desenho
+        initializeDrawingTools();
+
+        // Evento quando o mapa carregar
+        map.on('load', () => {
+            updateStatus('Mapa carregado com sucesso!', 'success');
+            console.log('Mapa inicializado e carregado');
+        });
+
+    } catch (error) {
+        updateStatus(`Erro ao inicializar mapa: ${error.message}`, 'error');
+        console.error('Erro na inicialização do mapa:', error);
     }
+}
+
+// Inicializar ferramentas de desenho
+function initializeDrawingTools() {
+    draw = new MapboxDraw({
+        displayControlsDefault: false,
+        controls: {
+            polygon: true,
+            trash: true
+        },
+        styles: [
+            {
+                'id': 'gl-draw-polygon-fill',
+                'type': 'fill',
+                'filter': ['all', ['==', '$type', 'Polygon']],
+                'paint': {
+                    'fill-color': '#ff0000',
+                    'fill-opacity': 0.3
+                }
+            },
+            {
+                'id': 'gl-draw-polygon-stroke',
+                'type': 'line',
+                'filter': ['all', ['==', '$type', 'Polygon']],
+                'paint': {
+                    'line-color': '#ff0000',
+                    'line-width': 2
+                }
+            }
+        ]
+    });
+
+    map.addControl(draw);
+
+    // Eventos do desenho
+    map.on('draw.create', updateArea);
+    map.on('draw.update', updateArea);
+    map.on('draw.delete', updateArea);
+}
+
+// Atualizar basemap
+function updateBasemap(basemapKey) {
+    if (!map) return;
+
+    const basemap = basemaps[basemapKey];
+    if (!basemap) {
+        updateStatus('Basemap não encontrado', 'error');
+        return;
+    }
+
+    try {
+        if (basemapKey === 'vector') {
+            map.setStyle(basemap.style);
+        } else {
+            map.setStyle(basemap.style);
+        }
+        
+        currentBasemap = basemapKey;
+        updateStatus(`Mapa base alterado para: ${basemap.name}`, 'info');
+
+        // Re-adicionar o controle de desenho após mudar o estilo
+        setTimeout(() => {
+            if (map.getControl('MapboxDraw')) {
+                map.removeControl(draw);
+            }
+            map.addControl(draw);
+        }, 500);
+
+    } catch (error) {
+        updateStatus(`Erro ao alterar mapa base: ${error.message}`, 'error');
+    }
+}
+
+// Carregar arquivo GeoJSON ou KML
+function handleFileUpload(event) {
+    const files = event.target.files;
+    if (!files.length) return;
+
+    Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+            try {
+                let geojsonData;
+                
+                if (file.name.toLowerCase().endsWith('.kml') || file.name.toLowerCase().endsWith('.kmz')) {
+                    // Converter KML para GeoJSON (simulação - em produção use togeojson library)
+                    geojsonData = parseKML(e.target.result);
+                } else {
+                    geojsonData = JSON.parse(e.target.result);
+                }
+                
+                addGeoJSONToMap(geojsonData, file.name);
+                updateFileInfo(file.name, geojsonData);
+                
+            } catch (error) {
+                updateStatus(`Erro ao processar arquivo ${file.name}: ${error.message}`, 'error');
+                console.error('Erro no processamento:', error);
+            }
+        };
+        
+        reader.onerror = function() {
+            updateStatus(`Erro ao ler arquivo ${file.name}`, 'error');
+        };
+        
+        reader.readAsText(file);
+    });
+}
+
+// Simulação de parser KML (em produção, use a biblioteca togeojson)
+function parseKML(kmlText) {
+    // Esta é uma simulação simples. Em produção, use:
+    // npm install @tmcw/togeojson
+    updateStatus('Conversão KML para GeoJSON simulada. Em produção, use a biblioteca togeojson.', 'warning');
+    
+    // Retornar um GeoJSON de exemplo
+    return {
+        type: "FeatureCollection",
+        features: [{
+            type: "Feature",
+            properties: {
+                name: "Área do KML",
+                description: "Arquivo KML carregado"
+            },
+            geometry: {
+                type: "Polygon",
+                coordinates: [[
+                    [-46.6333, -23.5505],
+                    [-46.6333, -23.5405],
+                    [-46.6233, -23.5405],
+                    [-46.6233, -23.5505],
+                    [-46.6333, -23.5505]
+                ]]
+            }
+        }]
+    };
+}
+
+// Adicionar GeoJSON ao mapa
+function addGeoJSONToMap(geojsonData, fileName) {
+    if (!map || !geojsonData) return;
+
+    const sourceId = `geojson-${fileName}-${Date.now()}`;
+    const layerId = `layer-${sourceId}`;
+
+    try {
+        // Adicionar fonte
+        map.addSource(sourceId, {
+            type: 'geojson',
+            data: geojsonData
+        });
+
+        // Adicionar camada de preenchimento para polígonos
+        if (geojsonData.features.some(f => f.geometry.type === 'Polygon')) {
+            map.addLayer({
+                id: `${layerId}-fill`,
+                type: 'fill',
+                source: sourceId,
+                paint: {
+                    'fill-color': '#0080ff',
+                    'fill-opacity': 0.4
+                },
+                filter: ['==', '$type', 'Polygon']
+            });
+        }
+
+        // Adicionar camada de linha
+        map.addLayer({
+            id: `${layerId}-line`,
+            type: 'line',
+            source: sourceId,
+            paint: {
+                'line-color': '#0066cc',
+                'line-width': 2
+            }
+        });
+
+        // Adicionar camada de pontos
+        if (geojsonData.features.some(f => f.geometry.type === 'Point')) {
+            map.addLayer({
+                id: `${layerId}-point`,
+                type: 'circle',
+                source: sourceId,
+                paint: {
+                    'circle-radius': 6,
+                    'circle-color': '#ff0000',
+                    'circle-stroke-width': 2,
+                    'circle-stroke-color': '#ffffff'
+                },
+                filter: ['==', '$type', 'Point']
+            });
+        }
+
+        // Salvar referência da camada
+        loadedLayers.push({
+            sourceId: sourceId,
+            layerIds: [`${layerId}-fill`, `${layerId}-line`, `${layerId}-point`].filter(id => map.getLayer(id)),
+            fileName: fileName,
+            data: geojsonData
+        });
+
+        // Ajustar zoom para a extensão dos dados
+        const coordinates = [];
+        geojsonData.features.forEach(feature => {
+            if (feature.geometry && feature.geometry.coordinates) {
+                coordinates.push(...getAllCoordinates(feature.geometry));
+            }
+        });
+
+        if (coordinates.length > 0) {
+            const bounds = coordinates.reduce((bounds, coord) => {
+                return bounds.extend(coord);
+            }, new maplibregl.LngLatBounds(coordinates[0], coordinates[0]));
+            
+            map.fitBounds(bounds, { padding: 20 });
+        }
+
+        updateStatus(`Arquivo ${fileName} carregado com sucesso!`, 'success');
+        calculateTotalArea();
+
+    } catch (error) {
+        updateStatus(`Erro ao adicionar GeoJSON ao mapa: ${error.message}`, 'error');
+        console.error('Erro ao adicionar camada:', error);
+    }
+}
+
+// Extrair todas as coordenadas de uma geometria
+function getAllCoordinates(geometry) {
+    const coordinates = [];
+    
+    function extractCoords(coords) {
+        if (Array.isArray(coords[0]) && typeof coords[0][0] === 'number') {
+            coordinates.push(coords);
+        } else {
+            coords.forEach(extractCoords);
+        }
+    }
+    
+    if (geometry.type === 'Point') {
+        coordinates.push(geometry.coordinates);
+    } else {
+        extractCoords(geometry.coordinates);
+    }
+    
+    return coordinates.flat();
+}
+
+// Atualizar informações do arquivo
+function updateFileInfo(fileName, geojsonData) {
+    const fileInfo = document.getElementById('file-info');
+    const featureCount = geojsonData.features.length;
+    const geometryTypes = {};
+    
+    geojsonData.features.forEach(feature => {
+        const type = feature.geometry.type;
+        geometryTypes[type] = (geometryTypes[type] || 0) + 1;
+    });
+    
+    let infoHTML = `
+        <div><strong>Arquivo:</strong> ${fileName}</div>
+        <div><strong>Features:</strong> ${featureCount}</div>
+        <div><strong>Tipos:</strong> ${Object.keys(geometryTypes).join(', ')}</div>
+    `;
     
     fileInfo.innerHTML = infoHTML;
 }
 
-// Função para calcular área usando Python
-async function calculateGeoJSONArea() {
-    if (!currentGeoJsonData) {
-        updateStatus('Nenhum GeoJSON carregado para calcular área', 'error');
-        return;
-    }
-    
-    try {
-        updateStatus('Calculando área com Python...', 'info');
-        
-        const result = await pyodide.runPythonAsync(`
-geojson_analyzer.load_geojson('${JSON.stringify(currentGeoJsonData).replace(/'/g, "\\'")}')
-`);
-        
-        const data = JSON.parse(result);
-        
-        if (data.success) {
-            displayAnalysisResults(data.analysis);
-            updateStatus('Análise concluída com sucesso!', 'success');
-        } else {
-            updateStatus(`Erro na análise: ${data.error}`, 'error');
-        }
-        
-    } catch (error) {
-        updateStatus(`Erro ao calcular área: ${error}`, 'error');
-    }
-}
+// Calcular área total
+function calculateTotalArea() {
+    let totalArea = 0;
+    let polygonCount = 0;
 
-function displayAnalysisResults(analysis) {
-    const resultsElement = document.getElementById('results');
-    let resultsHTML = '<h4>Resultados da Análise:</h4>';
-    
-    resultsHTML += `<p><strong>Tipo:</strong> ${analysis.type}</p>`;
-    resultsHTML += `<p><strong>Total de Features:</strong> ${analysis.total_features}</p>`;
-    
-    if (Object.keys(analysis.feature_types).length > 0) {
-        resultsHTML += '<p><strong>Distribuição por Tipo:</strong></p><ul>';
-        for (const [type, count] of Object.entries(analysis.feature_types)) {
-            resultsHTML += `<li>${type}: ${count}</li>`;
-        }
-        resultsHTML += '</ul>';
-    }
-    
-    if (analysis.areas.length > 0) {
-        resultsHTML += '<p><strong>Áreas Calculadas:</strong></p><ul>';
-        analysis.areas.forEach((area, index) => {
-            resultsHTML += `<li>Feature ${index + 1} (${area.type}): 
-                ${typeof area.area_km2 === 'number' ? area.area_km2.toFixed(2) : area.area_km2} km² 
-                (${typeof area.area_hectares === 'number' ? area.area_hectares.toFixed(2) : area.area_hectares} ha)</li>`;
-        });
-        
-        // Calcular área total
-        const totalArea = analysis.areas.reduce((sum, area) => {
-            return typeof area.area_km2 === 'number' ? sum + area.area_km2 : sum;
-        }, 0);
-        
-        resultsHTML += `<li><strong>Área Total: ${totalArea.toFixed(2)} km² (${(totalArea * 100).toFixed(2)} ha)</strong></li>`;
-        resultsHTML += '</ul>';
-    }
-    
-    resultsElement.innerHTML = resultsHTML;
-}
-
-// Event Listeners
-document.getElementById('geojson-file').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if (file) {
-        loadGeoJSONFile(file);
-    }
-});
-
-document.getElementById('calculate-area').addEventListener('click', calculateGeoJSONArea);
-
-document.getElementById('load-sample').addEventListener('click', function() {
-    // GeoJSON de exemplo - um polígono simples
-    const sampleGeoJSON = {
-        "type": "FeatureCollection",
-        "features": [
-            {
-                "type": "Feature",
-                "properties": {
-                    "name": "Área de Exemplo",
-                    "tipo": "polígono_teste"
-                },
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [[
-                        [-46.6333, -23.5505],
-                        [-46.6333, -23.5405],
-                        [-46.6233, -23.5405],
-                        [-46.6233, -23.5505],
-                        [-46.6333, -23.5505]
-                    ]]
-                }
+    // Calcular área das features carregadas
+    loadedLayers.forEach(layer => {
+        layer.data.features.forEach(feature => {
+            if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
+                const area = turf.area(feature.geometry); // Área em metros quadrados
+                totalArea += area;
+                polygonCount++;
             }
-        ]
-    };
-    
-    // Criar um arquivo virtual para simular upload
-    const blob = new Blob([JSON.stringify(sampleGeoJSON)], { type: 'application/json' });
-    const file = new File([blob], "exemplo.geojson");
-    loadGeoJSONFile(file);
-});
+        });
+    });
 
-// ... (mantenha os outros event listeners anteriores para add-point, clear-map, etc.)
+    // Calcular área dos desenhos
+    const drawnData = draw.getAll();
+    drawnData.features.forEach(feature => {
+        if (feature.geometry.type === 'Polygon') {
+            const area = turf.area(feature.geometry);
+            totalArea += area;
+            polygonCount++;
+        }
+    });
 
-document.getElementById('add-point').addEventListener('click', async () => {
-    const lat = document.getElementById('latitude').value;
-    const lng = document.getElementById('longitude').value;
-    const description = document.getElementById('description').value;
-    
-    if (!lat || !lng) {
-        updateStatus('Por favor, preencha latitude e longitude', 'error');
-        return;
-    }
-    
-    try {
-        // Adicionar marcador ao mapa
-        const marker = L.marker([lat, lng])
-            .addTo(map)
-            .bindPopup(`<b>${description}</b><br>Lat: ${lat}, Lng: ${lng}`);
-        
-        markers.push(marker);
-        updateStatus('Marcador adicionado com sucesso!', 'success');
-        
-    } catch (error) {
-        updateStatus(`Erro ao adicionar marcador: ${error}`, 'error');
-    }
-});
+    // Converter para km² e hectares
+    const areaKm2 = totalArea / 1000000;
+    const areaHectares = totalArea / 10000;
 
-document.getElementById('clear-map').addEventListener('click', () => {
-    // Limpar marcadores
-    markers.forEach(marker => map.removeLayer(marker));
-    markers = [];
+    // Atualizar interface
+    document.getElementById('total-area').textContent = areaKm2.toFixed(2);
+    document.getElementById('area-hectares').textContent = areaHectares.toFixed(2);
+    document.getElementById('polygon-count').textContent = polygonCount;
+
+    updateStatus(`Área calculada: ${areaKm2.toFixed(2)} km² (${areaHectares.toFixed(2)} ha)`, 'info');
+}
+
+// Atualizar área quando desenhar
+function updateArea() {
+    calculateTotalArea();
+}
+
+// Limpar todos os dados
+function clearAll() {
+    // Remover camadas carregadas
+    loadedLayers.forEach(layer => {
+        layer.layerIds.forEach(layerId => {
+            if (map.getLayer(layerId)) {
+                map.removeLayer(layerId);
+            }
+        });
+        if (map.getSource(layer.sourceId)) {
+            map.removeSource(layer.sourceId);
+        }
+    });
     
-    // Limpar layers GeoJSON
-    geoJsonLayers.forEach(item => map.removeLayer(item.layer));
-    geoJsonLayers = [];
+    loadedLayers = [];
     
-    currentGeoJsonData = null;
+    // Limpar desenhos
+    draw.deleteAll();
+    
+    // Limpar interface
     document.getElementById('file-info').innerHTML = '';
-    document.getElementById('results').innerHTML = '';
-    document.getElementById('geojson-file').value = '';
+    document.getElementById('total-area').textContent = '0.00';
+    document.getElementById('area-hectares').textContent = '0.00';
+    document.getElementById('polygon-count').textContent = '0';
+    document.getElementById('file-input').value = '';
     
-    updateStatus('Mapa limpo', 'success');
-});
+    updateStatus('Todos os dados foram removidos', 'info');
+}
 
-// Funções de interface
+// Configurar event listeners
+function setupEventListeners() {
+    // Seletor de basemap
+    document.getElementById('basemap-selector').addEventListener('change', (e) => {
+        updateBasemap(e.target.value);
+    });
+
+    // Upload de arquivo
+    document.getElementById('file-input').addEventListener('change', handleFileUpload);
+
+    // Botão calcular área
+    document.getElementById('calculate-area').addEventListener('click', calculateTotalArea);
+
+    // Botão limpar tudo
+    document.getElementById('clear-all').addEventListener('click', clearAll);
+
+    // Ferramentas de desenho
+    document.getElementById('draw-polygon').addEventListener('click', () => {
+        draw.changeMode('draw_polygon');
+        setActiveTool('draw-polygon');
+    });
+
+    document.getElementById('draw-rectangle').addEventListener('click', () => {
+        draw.changeMode('draw_rectangle');
+        setActiveTool('draw-rectangle');
+    });
+
+    document.getElementById('clear-drawing').addEventListener('click', () => {
+        draw.deleteAll();
+        updateArea();
+    });
+}
+
+// Definir ferramenta ativa
+function setActiveTool(toolId) {
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.getElementById(toolId).classList.add('active');
+}
+
+// Atualizar status
 function updateStatus(message, type = 'info') {
     const statusElement = document.getElementById('status');
-    statusElement.textContent = message;
-    statusElement.className = `status ${type}`;
+    const consoleOutput = document.getElementById('console-output');
     
-    const outputElement = document.getElementById('output');
-    outputElement.textContent += `[${type.toUpperCase()}] ${message}\n`;
-    outputElement.scrollTop = outputElement.scrollHeight;
+    if (statusElement) {
+        statusElement.textContent = message;
+        statusElement.className = `status ${type}`;
+    }
+    
+    if (consoleOutput) {
+        const timestamp = new Date().toLocaleTimeString();
+        consoleOutput.textContent += `[${timestamp}] ${message}\n`;
+        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    }
+    
+    console.log(`[${type}] ${message}`);
 }
 
-// Inicializar a aplicação
-initializePyodide();
+// Inicializar quando o DOM estiver pronto
+document.addEventListener('DOMContentLoaded', initializeApp);

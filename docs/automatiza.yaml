@@ -1,0 +1,5 @@
+# Executa automaticamente em:
+# - Push para main/master
+# - Pull requests
+# - Agendamento (diário)
+# - Manualmente via interface

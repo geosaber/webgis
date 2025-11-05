@@ -1,43 +1,33 @@
-Funcionalidades Implementadas:
-✅ Carregamento de Arquivos
-GeoJSON e KML (com conversão simulada)
+# WebGIS Simplificado com GeoJSON/KML e Cálculo de Área
 
-Múltiplos arquivos
+## Funcionalidades Implementadas:
 
-Visualização imediata no mapa
+### ✅ **Carregamento de Arquivos**
+- GeoJSON e KML (com conversão simulada)
+- Múltiplos arquivos
+- Visualização imediata no mapa
 
-✅ Desenho Interativo
-Polígonos livres
+### ✅ **Desenho Interativo**
+- Polígonos livres
+- Retângulos
+- Ferramenta de limpeza
 
-Retângulos
+### ✅ **Cálculo de Área**
+- Usando Turf.js para precisão
+- Área em km² e hectares
+- Cálculo automático ao desenhar
 
-Ferramenta de limpeza
+### ✅ **Múltiplos Basemaps**
+- OpenStreetMap
+- Satélite (ESRI)
+- OpenTopoMap
+- Carto DB
+- Vector Tiles
 
-✅ Cálculo de Área
-Usando Turf.js para precisão
-
-Área em km² e hectares
-
-Cálculo automático ao desenhar
-
-✅ Múltiplos Basemaps
-OpenStreetMap
-
-Satélite (ESRI)
-
-OpenTopoMap
-
-Carto DB
-
-Vector Tiles
-
-✅ Interface Moderna
-Design responsivo
-
-Feedback visual
-
-Console de desenvolvimento
-
-Status em tempo real
+### ✅ **Interface Moderna**
+- Design responsivo
+- Feedback visual
+- Console de desenvolvimento
+- Status em tempo real
 
 A aplicação está simplificada e focada nas funcionalidades essenciais de análise geoespacial!

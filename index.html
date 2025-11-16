@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGIS - Sistema de Informação Geográfica</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- MapLibre CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" />
+    
+    <!-- Leaflet.draw CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Painel Lateral Esquerdo -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>🌍 WebGIS</h2>
+            </div>
+            
+            <!-- Controle de Camadas -->
+            <div class="layer-control">
+                <h3>🛠️ Controle de Camadas</h3>
+                
+                <!-- Mapas Base -->
+                <div class="layer-group">
+                    <h4>🗺️ Mapas Base</h4>
+                    <label>
+                        <input type="radio" name="basemap" value="osm" checked> OpenStreetMap
+                    </label>
+                    <label>
+                        <input type="radio" name="basemap" value="terrain"> Terreno
+                    </label>
+                    <label>
+                        <input type="radio" name="basemap" value="satellite"> Satélite
+                    </label>
+                </div>
+                
+                <!-- Upload KML -->
+                <div class="layer-group">
+                    <h4>📁 Carregar KML</h4>
+                    <input type="file" id="kmlFile" accept=".kml,.kmz" class="file-input">
+                    <button id="clearLayers" class="btn btn-clear">🗑️ Limpar Camadas</button>
+                </div>
+                
+                <!-- Informações Geométricas -->
+                <div class="layer-group">
+                    <h4>📐 Informações Geométricas</h4>
+                    <div id="geometryInfo" class="geometry-info">
+                        <p>Carregue um arquivo KML para ver as informações geométricas</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mapa -->
+        <div id="map"></div>
+        
+        <!-- Loading -->
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Processando arquivo KML...</p>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <!-- Leaflet -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- MapLibre -->
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    
+    <!-- Leaflet.draw -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    
+    <!-- Turf.js para cálculos geográficos -->
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    
+    <!-- Omnivore para KML -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-omnivore/0.3.4/leaflet-omnivore.min.js"></script>
+    
+    <!-- App -->
+    <script src="app.js"></script>
+</body>
+</html>

@@ -38,10 +38,10 @@ class WebGIS {
             maxZoom: 19
         });
 
-        // Terreno (MapLibre)
-        this.baseLayers.terrain = L.tileLayer('https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=get_your_own_OpIi9ZULNHzrESv6T2vL', {
-            attribution: '© MapTiler © OpenStreetMap contributors',
-            maxZoom: 19
+        // Terreno (Usando OpenTopoMap como alternativa)
+        this.baseLayers.terrain = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors, © OpenTopoMap',
+            maxZoom: 17
         });
 
         // Satélite
@@ -94,38 +94,292 @@ class WebGIS {
         this.showLoading(true);
 
         try {
-            const kmlLayer = omnivore.kml(file)
+            const fileContent = await this.readFileAsText(file);
+            this.processKMLContent(fileContent, file.name);
+        } catch (error) {
+            console.error('Erro ao ler arquivo:', error);
+            alert('Erro ao ler o arquivo. Verifique se é um KML válido.');
+            this.showLoading(false);
+        }
+    }
+
+    // Ler arquivo como texto
+    readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = (e) => reject(e);
+            reader.readAsText(file);
+        });
+    }
+
+    // Processar conteúdo KML
+    async processKMLContent(kmlContent, fileName) {
+        try {
+            // Criar um blob URL para o KML
+            const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml' });
+            const url = URL.createObjectURL(blob);
+
+            // Usar o plugin omnivore para carregar o KML
+            const kmlLayer = omnivore.kml(url)
                 .on('ready', () => {
-                    this.processKMLayer(kmlLayer);
-                    this.showLoading(false);
+                    this.onKMLReady(kmlLayer, fileName);
+                    URL.revokeObjectURL(url); // Limpar URL
                 })
                 .on('error', (error) => {
-                    console.error('Erro ao carregar KML:', error);
-                    alert('Erro ao carregar arquivo KML. Verifique o formato do arquivo.');
-                    this.showLoading(false);
+                    console.error('Erro omnivore:', error);
+                    this.tryAlternativeKMLParse(kmlContent, fileName);
+                    URL.revokeObjectURL(url);
                 });
 
             kmlLayer.addTo(this.map);
             this.kmlLayers.push(kmlLayer);
 
-            // Ajustar view para a camada
-            this.map.fitBounds(kmlLayer.getBounds());
-
         } catch (error) {
-            console.error('Erro no processamento do KML:', error);
-            alert('Erro no processamento do arquivo KML.');
+            console.error('Erro no processamento KML:', error);
+            this.tryAlternativeKMLParse(kmlContent, fileName);
+        }
+    }
+
+    // Método alternativo para parsing KML
+    tryAlternativeKMLParse(kmlContent, fileName) {
+        try {
+            // Tentar usar o parser de KML nativo do Leaflet
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(kmlContent, 'text/xml');
+            
+            // Verificar se há erros no XML
+            const parseError = xmlDoc.getElementsByTagName('parsererror');
+            if (parseError.length > 0) {
+                throw new Error('Erro de parsing XML: ' + parseError[0].textContent);
+            }
+
+            // Processar manualmente o KML
+            this.processKMLManual(xmlDoc, fileName);
+            
+        } catch (error) {
+            console.error('Erro no parsing alternativo:', error);
+            alert('Erro ao processar arquivo KML. Verifique o formato.');
             this.showLoading(false);
         }
     }
 
-    // Processar camada KML e calcular geometrias
-    processKMLayer(kmlLayer) {
-        const features = kmlLayer.toGeoJSON().features;
-        const geometryInfo = document.getElementById('geometryInfo');
+    // Processar KML manualmente
+    processKMLManual(xmlDoc, fileName) {
+        const places = xmlDoc.getElementsByTagName('Placemark');
+        const features = [];
+
+        for (let placemark of places) {
+            const feature = this.parsePlacemark(placemark);
+            if (feature) {
+                features.push(feature);
+            }
+        }
+
+        if (features.length > 0) {
+            const geoJSON = {
+                type: 'FeatureCollection',
+                features: features
+            };
+            
+            const kmlLayer = L.geoJSON(geoJSON, {
+                onEachFeature: (feature, layer) => {
+                    if (feature.properties && feature.properties.name) {
+                        layer.bindPopup(`<b>${feature.properties.name}</b>`);
+                    }
+                },
+                style: {
+                    color: '#3388ff',
+                    weight: 2,
+                    fillColor: '#3388ff',
+                    fillOpacity: 0.2
+                }
+            });
+
+            this.kmlLayers.push(kmlLayer);
+            kmlLayer.addTo(this.map);
+            this.map.fitBounds(kmlLayer.getBounds());
+            this.displayGeometryInfo(geoJSON);
+        } else {
+            alert('Nenhuma geometria válida encontrada no arquivo KML.');
+        }
+
+        this.showLoading(false);
+    }
+
+    // Parse individual de Placemark
+    parsePlacemark(placemark) {
+        try {
+            const nameElement = placemark.getElementsByTagName('name')[0];
+            const name = nameElement ? nameElement.textContent : 'Sem nome';
+            
+            // Tentar diferentes tipos de geometria
+            const geometry = this.parseGeometry(placemark);
+            if (!geometry) return null;
+
+            return {
+                type: 'Feature',
+                properties: { name: name },
+                geometry: geometry
+            };
+        } catch (error) {
+            console.warn('Erro ao parsear placemark:', error);
+            return null;
+        }
+    }
+
+    // Parse de geometria
+    parseGeometry(placemark) {
+        // Polígono
+        const polygon = placemark.getElementsByTagName('Polygon')[0];
+        if (polygon) {
+            return this.parsePolygon(polygon);
+        }
+
+        // Linha
+        const lineString = placemark.getElementsByTagName('LineString')[0];
+        if (lineString) {
+            return this.parseLineString(lineString);
+        }
+
+        // Ponto
+        const point = placemark.getElementsByTagName('Point')[0];
+        if (point) {
+            return this.parsePoint(point);
+        }
+
+        // MultiGeometry
+        const multiGeometry = placemark.getElementsByTagName('MultiGeometry')[0];
+        if (multiGeometry) {
+            return this.parseMultiGeometry(multiGeometry);
+        }
+
+        return null;
+    }
+
+    // Parse de polígono
+    parsePolygon(polygon) {
+        const outerBoundary = polygon.getElementsByTagName('outerBoundaryIs')[0];
+        if (!outerBoundary) return null;
+
+        const linearRing = outerBoundary.getElementsByTagName('LinearRing')[0];
+        if (!linearRing) return null;
+
+        const coordinates = this.parseCoordinates(linearRing);
+        if (!coordinates || coordinates.length < 3) return null;
+
+        return {
+            type: 'Polygon',
+            coordinates: [coordinates]
+        };
+    }
+
+    // Parse de linha
+    parseLineString(lineString) {
+        const coordinates = this.parseCoordinates(lineString);
+        if (!coordinates || coordinates.length < 2) return null;
+
+        return {
+            type: 'LineString',
+            coordinates: coordinates
+        };
+    }
+
+    // Parse de ponto
+    parsePoint(point) {
+        const coordinates = this.parseCoordinates(point);
+        if (!coordinates) return null;
+
+        return {
+            type: 'Point',
+            coordinates: coordinates[0]
+        };
+    }
+
+    // Parse de MultiGeometry
+    parseMultiGeometry(multiGeometry) {
+        const geometries = [];
+        const types = ['Polygon', 'LineString', 'Point'];
         
+        for (let type of types) {
+            const elements = multiGeometry.getElementsByTagName(type);
+            for (let element of elements) {
+                let geometry = null;
+                switch (type) {
+                    case 'Polygon':
+                        geometry = this.parsePolygon(element);
+                        break;
+                    case 'LineString':
+                        geometry = this.parseLineString(element);
+                        break;
+                    case 'Point':
+                        geometry = this.parsePoint(element);
+                        break;
+                }
+                if (geometry) geometries.push(geometry);
+            }
+        }
+
+        if (geometries.length === 0) return null;
+        if (geometries.length === 1) return geometries[0];
+
+        return {
+            type: 'GeometryCollection',
+            geometries: geometries
+        };
+    }
+
+    // Parse de coordenadas
+    parseCoordinates(element) {
+        const coordElement = element.getElementsByTagName('coordinates')[0];
+        if (!coordElement) return null;
+
+        const coordText = coordElement.textContent.trim();
+        const coordArray = [];
+        
+        const lines = coordText.split('\n');
+        for (let line of lines) {
+            const coords = line.trim().split(/\s+/);
+            for (let coord of coords) {
+                if (coord.trim()) {
+                    const [lng, lat, alt] = coord.split(',').map(Number);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        coordArray.push([lng, lat]);
+                    }
+                }
+            }
+        }
+
+        return coordArray.length > 0 ? coordArray : null;
+    }
+
+    // Quando KML está pronto (omnivore)
+    onKMLReady(kmlLayer, fileName) {
+        try {
+            const geoJSON = kmlLayer.toGeoJSON();
+            this.displayGeometryInfo(geoJSON);
+            this.map.fitBounds(kmlLayer.getBounds());
+            this.showLoading(false);
+            
+            console.log(`KML carregado com sucesso: ${fileName}`, geoJSON);
+        } catch (error) {
+            console.error('Erro ao processar KML pronto:', error);
+            alert('Erro ao processar geometrias do KML.');
+            this.showLoading(false);
+        }
+    }
+
+    // Exibir informações geométricas
+    displayGeometryInfo(geoJSON) {
+        const geometryInfo = document.getElementById('geometryInfo');
         geometryInfo.innerHTML = '<h5>📊 Informações Geométricas</h5>';
 
-        features.forEach((feature, index) => {
+        if (!geoJSON || !geoJSON.features || geoJSON.features.length === 0) {
+            geometryInfo.innerHTML += '<p>Nenhuma geometria encontrada no arquivo</p>';
+            return;
+        }
+
+        geoJSON.features.forEach((feature, index) => {
             const geomInfo = this.calculateGeometry(feature);
             const featureElement = this.createFeatureInfoElement(feature, geomInfo, index);
             geometryInfo.appendChild(featureElement);
@@ -136,7 +390,7 @@ class WebGIS {
     calculateGeometry(feature) {
         const geometry = feature.geometry;
         const properties = feature.properties || {};
-        const name = properties.name || `Feature ${Date.now()}`;
+        const name = properties.name || `Feature ${feature.id || Date.now() + Math.random()}`;
         
         let info = {
             name: name,
@@ -149,90 +403,52 @@ class WebGIS {
         try {
             switch (geometry.type) {
                 case 'Polygon':
-                    info.area = this.calculateArea(geometry);
-                    info.length = this.calculatePerimeter(geometry);
-                    info.coordinates = this.getCenterCoordinates(geometry);
+                    info.area = turf.area(geometry);
+                    const polygonLine = turf.polygonToLine(geometry);
+                    info.length = turf.length(polygonLine, { units: 'kilometers' });
+                    const polygonCenter = turf.center(geometry);
+                    info.coordinates = polygonCenter.geometry.coordinates;
                     break;
 
                 case 'LineString':
-                    info.length = this.calculateLength(geometry);
-                    info.coordinates = this.getLineCoordinates(geometry);
+                    info.length = turf.length(geometry, { units: 'kilometers' });
+                    const lineCenter = turf.center(geometry);
+                    info.coordinates = lineCenter.geometry.coordinates;
                     break;
 
                 case 'Point':
-                    info.coordinates = this.getPointCoordinates(geometry);
+                    info.coordinates = geometry.coordinates;
                     break;
 
                 case 'MultiPolygon':
-                    info.area = this.calculateMultiPolygonArea(geometry);
-                    info.length = this.calculateMultiPolygonPerimeter(geometry);
-                    info.coordinates = this.getMultiPolygonCenter(geometry);
+                    info.area = turf.area(geometry);
+                    const multiPolygonLine = turf.polygonToLine(geometry);
+                    info.length = turf.length(multiPolygonLine, { units: 'kilometers' });
+                    const multiPolygonCenter = turf.center(geometry);
+                    info.coordinates = multiPolygonCenter.geometry.coordinates;
+                    break;
+
+                case 'GeometryCollection':
+                    // Calcular para a primeira geometria válida
+                    if (geometry.geometries && geometry.geometries.length > 0) {
+                        const firstGeom = geometry.geometries[0];
+                        const tempFeature = { type: 'Feature', geometry: firstGeom };
+                        const tempInfo = this.calculateGeometry(tempFeature);
+                        info.type = `Collection (${firstGeom.type})`;
+                        info.area = tempInfo.area;
+                        info.length = tempInfo.length;
+                        info.coordinates = tempInfo.coordinates;
+                    }
                     break;
 
                 default:
                     console.warn('Tipo de geometria não suportado:', geometry.type);
             }
         } catch (error) {
-            console.error('Erro no cálculo geométrico:', error);
+            console.error('Erro no cálculo geométrico:', error, geometry);
         }
 
         return info;
-    }
-
-    // Calcular área (Polígono)
-    calculateArea(geometry) {
-        return turf.area(geometry);
-    }
-
-    // Calcular perímetro (Polígono)
-    calculatePerimeter(geometry) {
-        const line = turf.polygonToLine(geometry);
-        return turf.length(line, { units: 'kilometers' });
-    }
-
-    // Calcular comprimento (Linha)
-    calculateLength(geometry) {
-        return turf.length(geometry, { units: 'kilometers' });
-    }
-
-    // Calcular área para MultiPolygon
-    calculateMultiPolygonArea(geometry) {
-        return turf.area(geometry);
-    }
-
-    // Calcular perímetro para MultiPolygon
-    calculateMultiPolygonPerimeter(geometry) {
-        let totalPerimeter = 0;
-        geometry.coordinates.forEach(polygon => {
-            const poly = turf.polygon(polygon);
-            const line = turf.polygonToLine(poly);
-            totalPerimeter += turf.length(line, { units: 'kilometers' });
-        });
-        return totalPerimeter;
-    }
-
-    // Obter coordenadas do centro (Polígono)
-    getCenterCoordinates(geometry) {
-        const center = turf.center(geometry);
-        return center.geometry.coordinates;
-    }
-
-    // Obter coordenadas (Linha)
-    getLineCoordinates(geometry) {
-        // Retorna o ponto médio da linha
-        const along = turf.along(geometry, turf.length(geometry) / 2);
-        return along.geometry.coordinates;
-    }
-
-    // Obter coordenadas (Ponto)
-    getPointCoordinates(geometry) {
-        return geometry.coordinates;
-    }
-
-    // Obter centro para MultiPolygon
-    getMultiPolygonCenter(geometry) {
-        const center = turf.center(geometry);
-        return center.geometry.coordinates;
     }
 
     // Criar elemento HTML para informações da feature
@@ -257,7 +473,50 @@ class WebGIS {
         }
 
         div.innerHTML = content;
+        
+        // Adicionar evento de clique para destacar no mapa
+        div.style.cursor = 'pointer';
+        div.addEventListener('click', () => {
+            this.highlightFeature(feature);
+        });
+
         return div;
+    }
+
+    // Destacar feature no mapa
+    highlightFeature(feature) {
+        // Limpar destaque anterior
+        this.clearHighlights();
+        
+        // Destacar feature
+        const highlightLayer = L.geoJSON(feature, {
+            style: {
+                color: '#ff0000',
+                weight: 4,
+                fillColor: '#ff0000',
+                fillOpacity: 0.3
+            }
+        }).addTo(this.map);
+        
+        this.kmlLayers.push(highlightLayer);
+        
+        // Centralizar no feature
+        this.map.fitBounds(highlightLayer.getBounds(), { padding: [20, 20] });
+    }
+
+    // Limpar destaques
+    clearHighlights() {
+        // Manter apenas as camadas originais (não as de destaque)
+        this.kmlLayers = this.kmlLayers.filter(layer => {
+            if (layer._layers) {
+                const firstLayer = Object.values(layer._layers)[0];
+                if (firstLayer && firstLayer.options && firstLayer.options.color === '#ff0000') {
+                    this.map.removeLayer(layer);
+                    return false;
+                }
+            }
+            return true;
+        });
     }
 
     // Limpar camadas KML

@@ -1,33 +1,22 @@
-# WebGIS Simplificado com GeoJSON/KML e Cálculo de Área
+## Como usar:
 
-## Funcionalidades Implementadas:
+1. **Hospedagem no GitHub Pages:**
+   - Crie um repositório no GitHub
+   - Faça upload dos 3 arquivos
+   - Ative o GitHub Pages nas configurações do repositório
 
-### ✅ **Carregamento de Arquivos**
-- GeoJSON e KML (com conversão simulada)
-- Múltiplos arquivos
-- Visualização imediata no mapa
+2. **Funcionalidades:**
+   - **Mapas Base:** OpenStreetMap, Terreno e Satélite
+   - **Upload KML:** Suporta polígonos, linhas e pontos
+   - **Cálculos Automáticos:**
+     - Área para polígonos (km²)
+     - Comprimento para linhas (km)
+     - Coordenadas para todos os tipos
+   - **Interface Responsiva:** Funciona em desktop e mobile
 
-### ✅ **Desenho Interativo**
-- Polígonos livres
-- Retângulos
-- Ferramenta de limpeza
-
-### ✅ **Cálculo de Área**
-- Usando Turf.js para precisão
-- Área em km² e hectares
-- Cálculo automático ao desenhar
-
-### ✅ **Múltiplos Basemaps**
-- OpenStreetMap
-- Satélite (ESRI)
-- OpenTopoMap
-- Carto DB
-- Vector Tiles
-
-### ✅ **Interface Moderna**
-- Design responsivo
-- Feedback visual
-- Console de desenvolvimento
-- Status em tempo real
-
-A aplicação está simplificada e focada nas funcionalidades essenciais de análise geoespacial!
+3. **Recursos Técnicos:**
+   - Leaflet para renderização do mapa
+   - MapLibre para camada de terreno
+   - Turf.js para cálculos geográficos
+   - Omnivore para leitura de KML
+   - Design moderno com CSS3

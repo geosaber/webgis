@@ -38,13 +38,13 @@ class WebGIS {
             maxZoom: 19
         });
 
-        // Terreno (Usando OpenTopoMap como alternativa)
+        // Terreno (OpenTopoMap)
         this.baseLayers.terrain = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors, © OpenTopoMap',
             maxZoom: 17
         });
 
-        // Satélite
+        // Satélite (ESRI World Imagery)
         this.baseLayers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
             maxZoom: 19
@@ -95,7 +95,7 @@ class WebGIS {
 
         try {
             const fileContent = await this.readFileAsText(file);
-            this.processKMLContent(fileContent, file.name);
+            await this.processKMLContent(fileContent, file.name);
         } catch (error) {
             console.error('Erro ao ler arquivo:', error);
             alert('Erro ao ler o arquivo. Verifique se é um KML válido.');
@@ -109,117 +109,107 @@ class WebGIS {
             const reader = new FileReader();
             reader.onload = (e) => resolve(e.target.result);
             reader.onerror = (e) => reject(e);
-            reader.readAsText(file);
+            reader.readAsText(file, 'UTF-8');
         });
     }
 
     // Processar conteúdo KML
     async processKMLContent(kmlContent, fileName) {
         try {
-            // Criar um blob URL para o KML
+            // Tentar primeiro com o parser manual (mais confiável)
+            this.processKMLManual(kmlContent, fileName);
+        } catch (error) {
+            console.error('Erro no processamento manual:', error);
+            // Fallback para omnivore
+            this.tryOmnivoreKML(kmlContent, fileName);
+        }
+    }
+
+    // Tentar processar com Omnivore
+    async tryOmnivoreKML(kmlContent, fileName) {
+        try {
             const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml' });
             const url = URL.createObjectURL(blob);
 
-            // Usar o plugin omnivore para carregar o KML
             const kmlLayer = omnivore.kml(url)
                 .on('ready', () => {
                     this.onKMLReady(kmlLayer, fileName);
-                    URL.revokeObjectURL(url); // Limpar URL
+                    URL.revokeObjectURL(url);
                 })
                 .on('error', (error) => {
                     console.error('Erro omnivore:', error);
-                    this.tryAlternativeKMLParse(kmlContent, fileName);
                     URL.revokeObjectURL(url);
+                    alert('Erro ao processar KML com omnivore. Tentando método alternativo...');
+                    this.processKMLManual(kmlContent, fileName);
                 });
 
             kmlLayer.addTo(this.map);
             this.kmlLayers.push(kmlLayer);
 
         } catch (error) {
-            console.error('Erro no processamento KML:', error);
-            this.tryAlternativeKMLParse(kmlContent, fileName);
+            console.error('Erro no omnivore:', error);
+            this.processKMLManual(kmlContent, fileName);
         }
     }
 
-    // Método alternativo para parsing KML
-    tryAlternativeKMLParse(kmlContent, fileName) {
+    // Processar KML manualmente (método principal)
+    processKMLManual(kmlContent, fileName) {
         try {
-            // Tentar usar o parser de KML nativo do Leaflet
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(kmlContent, 'text/xml');
             
-            // Verificar se há erros no XML
+            // Verificar erros de parsing XML
             const parseError = xmlDoc.getElementsByTagName('parsererror');
             if (parseError.length > 0) {
                 throw new Error('Erro de parsing XML: ' + parseError[0].textContent);
             }
 
-            // Processar manualmente o KML
-            this.processKMLManual(xmlDoc, fileName);
+            const features = this.extractFeaturesFromKML(xmlDoc);
+            
+            if (features.length === 0) {
+                throw new Error('Nenhuma geometria válida encontrada no KML');
+            }
+
+            this.createKMLayer(features, fileName);
             
         } catch (error) {
-            console.error('Erro no parsing alternativo:', error);
-            alert('Erro ao processar arquivo KML. Verifique o formato.');
+            console.error('Erro no parsing manual:', error);
+            alert('Erro ao processar arquivo KML: ' + error.message);
             this.showLoading(false);
         }
     }
 
-    // Processar KML manualmente
-    processKMLManual(xmlDoc, fileName) {
-        const places = xmlDoc.getElementsByTagName('Placemark');
+    // Extrair features do KML
+    extractFeaturesFromKML(xmlDoc) {
         const features = [];
-
-        for (let placemark of places) {
+        const placemarks = xmlDoc.getElementsByTagName('Placemark');
+        
+        for (let i = 0; i < placemarks.length; i++) {
+            const placemark = placemarks[i];
             const feature = this.parsePlacemark(placemark);
             if (feature) {
                 features.push(feature);
             }
         }
-
-        if (features.length > 0) {
-            const geoJSON = {
-                type: 'FeatureCollection',
-                features: features
-            };
-            
-            const kmlLayer = L.geoJSON(geoJSON, {
-                onEachFeature: (feature, layer) => {
-                    if (feature.properties && feature.properties.name) {
-                        layer.bindPopup(`<b>${feature.properties.name}</b>`);
-                    }
-                },
-                style: {
-                    color: '#3388ff',
-                    weight: 2,
-                    fillColor: '#3388ff',
-                    fillOpacity: 0.2
-                }
-            });
-
-            this.kmlLayers.push(kmlLayer);
-            kmlLayer.addTo(this.map);
-            this.map.fitBounds(kmlLayer.getBounds());
-            this.displayGeometryInfo(geoJSON);
-        } else {
-            alert('Nenhuma geometria válida encontrada no arquivo KML.');
-        }
-
-        this.showLoading(false);
+        
+        return features;
     }
 
     // Parse individual de Placemark
     parsePlacemark(placemark) {
         try {
-            const nameElement = placemark.getElementsByTagName('name')[0];
-            const name = nameElement ? nameElement.textContent : 'Sem nome';
+            const name = this.getTextContent(placemark, 'name') || 'Sem nome';
+            const description = this.getTextContent(placemark, 'description') || '';
             
-            // Tentar diferentes tipos de geometria
             const geometry = this.parseGeometry(placemark);
             if (!geometry) return null;
 
             return {
                 type: 'Feature',
-                properties: { name: name },
+                properties: { 
+                    name: name,
+                    description: description
+                },
                 geometry: geometry
             };
         } catch (error) {
@@ -228,30 +218,27 @@ class WebGIS {
         }
     }
 
+    // Obter conteúdo de texto de um elemento
+    getTextContent(element, tagName) {
+        const elements = element.getElementsByTagName(tagName);
+        return elements.length > 0 ? elements[0].textContent.trim() : null;
+    }
+
     // Parse de geometria
     parseGeometry(placemark) {
-        // Polígono
-        const polygon = placemark.getElementsByTagName('Polygon')[0];
-        if (polygon) {
-            return this.parsePolygon(polygon);
-        }
+        // Tentar diferentes tipos de geometria na ordem
+        const geometryTypes = [
+            { tag: 'Polygon', parser: this.parsePolygon.bind(this) },
+            { tag: 'LineString', parser: this.parseLineString.bind(this) },
+            { tag: 'Point', parser: this.parsePoint.bind(this) },
+            { tag: 'MultiGeometry', parser: this.parseMultiGeometry.bind(this) }
+        ];
 
-        // Linha
-        const lineString = placemark.getElementsByTagName('LineString')[0];
-        if (lineString) {
-            return this.parseLineString(lineString);
-        }
-
-        // Ponto
-        const point = placemark.getElementsByTagName('Point')[0];
-        if (point) {
-            return this.parsePoint(point);
-        }
-
-        // MultiGeometry
-        const multiGeometry = placemark.getElementsByTagName('MultiGeometry')[0];
-        if (multiGeometry) {
-            return this.parseMultiGeometry(multiGeometry);
+        for (let geomType of geometryTypes) {
+            const element = placemark.getElementsByTagName(geomType.tag)[0];
+            if (element) {
+                return geomType.parser(element);
+            }
         }
 
         return null;
@@ -288,7 +275,7 @@ class WebGIS {
     // Parse de ponto
     parsePoint(point) {
         const coordinates = this.parseCoordinates(point);
-        if (!coordinates) return null;
+        if (!coordinates || coordinates.length === 0) return null;
 
         return {
             type: 'Point',
@@ -299,25 +286,26 @@ class WebGIS {
     // Parse de MultiGeometry
     parseMultiGeometry(multiGeometry) {
         const geometries = [];
-        const types = ['Polygon', 'LineString', 'Point'];
         
-        for (let type of types) {
-            const elements = multiGeometry.getElementsByTagName(type);
-            for (let element of elements) {
-                let geometry = null;
-                switch (type) {
-                    case 'Polygon':
-                        geometry = this.parsePolygon(element);
-                        break;
-                    case 'LineString':
-                        geometry = this.parseLineString(element);
-                        break;
-                    case 'Point':
-                        geometry = this.parsePoint(element);
-                        break;
-                }
-                if (geometry) geometries.push(geometry);
-            }
+        // Processar polígonos
+        const polygons = multiGeometry.getElementsByTagName('Polygon');
+        for (let polygon of polygons) {
+            const geom = this.parsePolygon(polygon);
+            if (geom) geometries.push(geom);
+        }
+        
+        // Processar linhas
+        const lineStrings = multiGeometry.getElementsByTagName('LineString');
+        for (let lineString of lineStrings) {
+            const geom = this.parseLineString(lineString);
+            if (geom) geometries.push(geom);
+        }
+        
+        // Processar pontos
+        const points = multiGeometry.getElementsByTagName('Point');
+        for (let point of points) {
+            const geom = this.parsePoint(point);
+            if (geom) geometries.push(geom);
         }
 
         if (geometries.length === 0) return null;
@@ -335,22 +323,106 @@ class WebGIS {
         if (!coordElement) return null;
 
         const coordText = coordElement.textContent.trim();
-        const coordArray = [];
+        const coordinates = [];
         
-        const lines = coordText.split('\n');
-        for (let line of lines) {
-            const coords = line.trim().split(/\s+/);
-            for (let coord of coords) {
-                if (coord.trim()) {
-                    const [lng, lat, alt] = coord.split(',').map(Number);
+        // Processar coordenadas - pode ter múltiplas linhas e espaços
+        const coordGroups = coordText.split(/\s+/);
+        
+        for (let coordStr of coordGroups) {
+            if (coordStr.trim()) {
+                const parts = coordStr.split(',');
+                if (parts.length >= 2) {
+                    const lng = parseFloat(parts[0]);
+                    const lat = parseFloat(parts[1]);
+                    
                     if (!isNaN(lat) && !isNaN(lng)) {
-                        coordArray.push([lng, lat]);
+                        coordinates.push([lng, lat]);
                     }
                 }
             }
         }
 
-        return coordArray.length > 0 ? coordArray : null;
+        return coordinates.length > 0 ? coordinates : null;
+    }
+
+    // Criar camada KML no mapa
+    createKMLayer(features, fileName) {
+        const geoJSON = {
+            type: 'FeatureCollection',
+            features: features
+        };
+        
+        // Estilos para diferentes tipos de geometria
+        const pointStyle = {
+            radius: 8,
+            fillColor: "#ff7800",
+            color: "#000",
+            weight: 1,
+            opacity: 1,
+            fillOpacity: 0.8
+        };
+
+        const lineStyle = {
+            color: "#3388ff",
+            weight: 3,
+            opacity: 0.8
+        };
+
+        const polygonStyle = {
+            color: "#3388ff",
+            weight: 2,
+            fillColor: "#3388ff",
+            fillOpacity: 0.2
+        };
+
+        const kmlLayer = L.geoJSON(geoJSON, {
+            pointToLayer: (feature, latlng) => {
+                return L.circleMarker(latlng, pointStyle);
+            },
+            style: (feature) => {
+                switch (feature.geometry.type) {
+                    case 'LineString':
+                        return lineStyle;
+                    case 'Polygon':
+                        return polygonStyle;
+                    default:
+                        return polygonStyle;
+                }
+            },
+            onEachFeature: (feature, layer) => {
+                // Popup com informações
+                let popupContent = `<b>${feature.properties.name || 'Feature'}</b>`;
+                if (feature.properties.description) {
+                    popupContent += `<br>${feature.properties.description}`;
+                }
+                
+                const geomInfo = this.calculateGeometry(feature);
+                popupContent += `<br><small>Tipo: ${geomInfo.type}</small>`;
+                
+                if (geomInfo.area !== null) {
+                    popupContent += `<br>Área: ${(geomInfo.area / 1000000).toFixed(2)} km²`;
+                }
+                if (geomInfo.length !== null) {
+                    popupContent += `<br>Comprimento: ${geomInfo.length.toFixed(2)} km`;
+                }
+                
+                layer.bindPopup(popupContent);
+            }
+        });
+
+        this.kmlLayers.push(kmlLayer);
+        kmlLayer.addTo(this.map);
+        
+        // Ajustar view para a camada
+        if (kmlLayer.getBounds().isValid()) {
+            this.map.fitBounds(kmlLayer.getBounds());
+        }
+        
+        // Exibir informações geométricas
+        this.displayGeometryInfo(geoJSON);
+        this.showLoading(false);
+        
+        console.log(`KML carregado: ${fileName}`, geoJSON);
     }
 
     // Quando KML está pronto (omnivore)
@@ -358,13 +430,15 @@ class WebGIS {
         try {
             const geoJSON = kmlLayer.toGeoJSON();
             this.displayGeometryInfo(geoJSON);
-            this.map.fitBounds(kmlLayer.getBounds());
-            this.showLoading(false);
             
-            console.log(`KML carregado com sucesso: ${fileName}`, geoJSON);
+            if (kmlLayer.getBounds && kmlLayer.getBounds().isValid()) {
+                this.map.fitBounds(kmlLayer.getBounds());
+            }
+            
+            this.showLoading(false);
+            console.log(`KML carregado com omnivore: ${fileName}`, geoJSON);
         } catch (error) {
             console.error('Erro ao processar KML pronto:', error);
-            alert('Erro ao processar geometrias do KML.');
             this.showLoading(false);
         }
     }
@@ -390,7 +464,7 @@ class WebGIS {
     calculateGeometry(feature) {
         const geometry = feature.geometry;
         const properties = feature.properties || {};
-        const name = properties.name || `Feature ${feature.id || Date.now() + Math.random()}`;
+        const name = properties.name || `Feature ${feature.id || Date.now()}`;
         
         let info = {
             name: name,
@@ -429,7 +503,6 @@ class WebGIS {
                     break;
 
                 case 'GeometryCollection':
-                    // Calcular para a primeira geometria válida
                     if (geometry.geometries && geometry.geometries.length > 0) {
                         const firstGeom = geometry.geometries[0];
                         const tempFeature = { type: 'Feature', geometry: firstGeom };
@@ -445,7 +518,7 @@ class WebGIS {
                     console.warn('Tipo de geometria não suportado:', geometry.type);
             }
         } catch (error) {
-            console.error('Erro no cálculo geométrico:', error, geometry);
+            console.error('Erro no cálculo geométrico:', error);
         }
 
         return info;
@@ -485,10 +558,8 @@ class WebGIS {
 
     // Destacar feature no mapa
     highlightFeature(feature) {
-        // Limpar destaque anterior
         this.clearHighlights();
         
-        // Destacar feature
         const highlightLayer = L.geoJSON(feature, {
             style: {
                 color: '#ff0000',
@@ -500,13 +571,13 @@ class WebGIS {
         
         this.kmlLayers.push(highlightLayer);
         
-        // Centralizar no feature
-        this.map.fitBounds(highlightLayer.getBounds(), { padding: [20, 20] });
+        if (highlightLayer.getBounds) {
+            this.map.fitBounds(highlightLayer.getBounds(), { padding: [20, 20] });
+        }
     }
 
     // Limpar destaques
     clearHighlights() {
-        // Manter apenas as camadas originais (não as de destaque)
         this.kmlLayers = this.kmlLayers.filter(layer => {
             if (layer._layers) {
                 const firstLayer = Object.values(layer._layers)[0];
@@ -547,21 +618,3 @@ class WebGIS {
 document.addEventListener('DOMContentLoaded', () => {
     new WebGIS();
 });
-
-// Adicionar informações sobre como usar
-console.log(`
-🌍 WebGIS Inicializado!
-
-Funcionalidades:
-- Múltiplos mapas base (OSM, Terreno, Satélite)
-- Upload de arquivos KML
-- Cálculo automático de áreas e comprimentos
-- Visualização de coordenadas
-- Interface responsiva
-
-Como usar:
-1. Escolha um mapa base
-2. Faça upload de um arquivo KML
-3. Veja as informações geométricas no painel lateral
-4. Use o botão "Limpar" para remover camadas
-`);
